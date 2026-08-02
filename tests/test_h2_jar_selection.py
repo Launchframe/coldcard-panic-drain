@@ -4,10 +4,15 @@ from pathlib import Path
 
 from coldcard_panic_drain.sparrow.h2_reader import (
     H2_JARS,
+    SCRIPT_TYPE_P2WPKH,
     _detect_mvstore_format,
     _h2_jar_for_wallet,
     _parse_shell_output,
 )
+
+
+def test_sparrow_p2wpkh_script_type_ordinal():
+    assert SCRIPT_TYPE_P2WPKH == 6
 
 
 def test_detect_format_2(tmp_path: Path):

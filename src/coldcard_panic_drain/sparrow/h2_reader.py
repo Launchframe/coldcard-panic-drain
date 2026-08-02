@@ -22,8 +22,9 @@ H2_JARS: dict[int, Path] = {
     3: VENDOR_DIR / "h2-2.2.224.jar",
 }
 
-# BIP84 native segwit
-SCRIPT_TYPE_P2WPKH = 1
+# Sparrow Drongo ScriptType enum ordinal for P2WPKH (Native Segwit / BIP84).
+# Enum order: P2PK=0, P2PKH=1, MULTISIG=2, P2SH=3, P2SH_P2WPKH=4, P2SH_P2WSH=5, P2WPKH=6, ...
+SCRIPT_TYPE_P2WPKH = 6
 
 # Sparrow 2.x stores wallet tables in a dedicated schema (not PUBLIC).
 DEFAULT_SPARROW_SCHEMA = "wallet_master"
