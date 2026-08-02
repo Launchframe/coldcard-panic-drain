@@ -20,6 +20,7 @@ from coldcard_panic_drain.export.warnings import (
     write_skipped_utxos,
 )
 from coldcard_panic_drain.network_guard import enable_localhost_guard
+from coldcard_panic_drain.wallet_path_guard import enable_cli_wallet_access
 from coldcard_panic_drain.plan.labeling import (
     apply_frozen_exclusions,
     prompt_for_labels,
@@ -102,6 +103,7 @@ def _print_mapping_table(assignments) -> None:
 def main() -> None:
     """Entry: localhost-only network guard and RAM workspace."""
     enable_localhost_guard()
+    enable_cli_wallet_access()
     init_ram_workspace()
 
 
