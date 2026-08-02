@@ -2,7 +2,7 @@
 
 Offline CLI for migrating funds from a compromised Sparrow wallet (Wallet A) to a fresh wallet (Wallet B) without consolidating UTXOs or broadcasting in one shot.
 
-**Localhost-only contract:** wallet processing (`plan`, `generate`, etc.) is file-only. The only network use is optional `broadcast-due`, which talks to **Bitcoin Core on 127.0.0.1 / ::1** only. Remote nodes require manual broadcast in Sparrow.
+**Local network contract:** wallet processing (`plan`, `generate`, etc.) is file-only. The only network use is optional `broadcast-due`, which talks to **Bitcoin Core on localhost or a `*.local` host** (e.g. `https://happy-feet.local:8332`). Public/remote nodes require manual broadcast in Sparrow.
 
 ## Requirements
 
@@ -107,9 +107,12 @@ coldcard-panic-drain export-calendar --output /Volumes/MICROSD/panic-batch-001
 
 Use competitive `--fee-base` at plan time — you are racing the attacker. See [docs/FEE-SPIKE-RECOVERY.md](docs/FEE-SPIKE-RECOVERY.md).
 
+Point `--rpc-url` at Core on the same machine (`http://127.0.0.1:8332`) or a LAN node via mDNS (`https://happy-feet.local:8332`). Bare IP addresses like `http://192.168.1.50:8332` are rejected — use a `*.local` hostname instead.
+
 ```bash
 # Hourly cron — ignores quiet hours; may broadcast overnight
-0 * * * * coldcard-panic-drain broadcast-due -o /path/to/batch --max-count 1
+0 * * * * coldcard-panic-drain broadcast-due -o /path/to/batch --max-count 1 \
+  --rpc-url https://happy-feet.local:8332
 ```
 
 `broadcast-state.yaml` tracks completed broadcasts and survives reboots.

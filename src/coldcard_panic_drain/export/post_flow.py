@@ -49,7 +49,7 @@ def write_post_flow_checklist(path: Path, skip_summary: SkipSummary) -> None:
             "Signed: place files in psbts_signed/ → follow schedule.yaml.",
             "",
             "Manual broadcast: open signed PSBT in Sparrow.",
-            "Auto broadcast: broadcast-due (local Bitcoin Core on 127.0.0.1 only).",
+            "Auto broadcast: broadcast-due (local Bitcoin Core on localhost or *.local).",
         ]
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

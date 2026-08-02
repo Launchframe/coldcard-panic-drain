@@ -1,4 +1,4 @@
-"""Bitcoin Core JSON-RPC client (localhost only)."""
+"""Bitcoin Core JSON-RPC client (localhost and *.local only)."""
 
 from __future__ import annotations
 

@@ -346,7 +346,11 @@ def export_calendar(
 @app.command("broadcast-due")
 def broadcast_due(
     output: Path = typer.Option(..., "--output", "-o"),
-    rpc_url: str = typer.Option("http://127.0.0.1:8332", "--rpc-url"),
+    rpc_url: str = typer.Option(
+        "http://127.0.0.1:8332",
+        "--rpc-url",
+        help="Bitcoin Core RPC URL (localhost, loopback, or *.local only)",
+    ),
     rpc_cookie_file: Optional[Path] = typer.Option(
         Path("~/.bitcoin/.cookie"), "--rpc-cookie-file"
     ),
@@ -356,7 +360,7 @@ def broadcast_due(
     dry_run: bool = typer.Option(False, "--dry-run"),
     skip_failed: bool = typer.Option(False, "--skip-failed"),
 ) -> None:
-    """Broadcast due signed PSBTs via local Bitcoin Core (localhost RPC only)."""
+    """Broadcast due signed PSBTs via local Bitcoin Core (localhost or *.local RPC)."""
     typer.echo(FEE_URGENCY_BANNER, err=True)
     try:
         if rpc_user and rpc_password:
