@@ -47,26 +47,10 @@ def test_require_plan_gates_rejects_missing_ownership():
         fee_jitter=0.0,
         min_blocks_apart=2,
         spread_hours=48.0,
-        addresses_confirmed=True,
+        mapping_confirmed=True,
         dest_ownership_confirmed=False,
     )
     with pytest.raises(ValueError, match="ownership was not confirmed"):
-        session.require_plan_gates()
-
-
-def test_require_plan_gates_rejects_missing_address_confirm():
-    session = DrainSession(
-        source_path="/tmp/a.mv.db",
-        dest_path="/tmp/b.mv.db",
-        chain_tip_height=900_000,
-        fee_base=25,
-        fee_jitter=0.0,
-        min_blocks_apart=2,
-        spread_hours=48.0,
-        addresses_confirmed=False,
-        dest_ownership_confirmed=True,
-    )
-    with pytest.raises(ValueError, match="addresses were not confirmed"):
         session.require_plan_gates()
 
 
@@ -79,7 +63,7 @@ def test_require_plan_gates_passes_when_both_confirmed():
         fee_jitter=0.0,
         min_blocks_apart=2,
         spread_hours=48.0,
-        addresses_confirmed=True,
+        mapping_confirmed=True,
         dest_ownership_confirmed=True,
     )
     session.require_plan_gates()

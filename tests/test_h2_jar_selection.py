@@ -67,3 +67,33 @@ def test_parse_shell_output_comma():
 def test_parse_shell_output_pipe():
     stdout = "A | B | C\n1 | 2 | 3\n(1 row)\n"
     assert _parse_shell_output(stdout) == [["1", "2", "3"]]
+
+
+def test_fetch_column_chunks_reassembles(monkeypatch):
+    calls: list[str] = []
+
+    def fake_query(_wallet_path, sql):
+        calls.append(sql)
+        if sql.startswith("SELECT LENGTH"):
+            return [["111"]]
+        if "SUBSTRING" in sql and ", 1," in sql:
+            return [["A" * 50]]
+        if "SUBSTRING" in sql and ", 51," in sql:
+            return [["B" * 50]]
+        if "SUBSTRING" in sql and ", 101," in sql:
+            return [["C" * 11]]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(
+        "coldcard_panic_drain.sparrow.h2_reader._query_rows",
+        fake_query,
+    )
+    from coldcard_panic_drain.sparrow.h2_reader import _fetch_column_chunks
+
+    got = _fetch_column_chunks(
+        Path("/tmp/x.mv.db"),
+        column="extendedPublicKey",
+        from_clause='FROM "wallet_master"."keystore" LIMIT 1',
+    )
+    assert got == ("A" * 50) + ("B" * 50) + ("C" * 11)
+    assert calls[0].startswith("SELECT LENGTH")

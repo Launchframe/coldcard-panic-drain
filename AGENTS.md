@@ -13,7 +13,7 @@ Instructions for AI agents planning and executing work in this repository.
 1. Reads Sparrow BIP84 wallet files (`.mv.db`) locally
 2. Maps spendable UTXOs from Wallet A → fresh receive addresses on Wallet B
 3. Exports single-UTXO PSBTs, BIP-329 label files, broadcast schedule, and checklists
-4. Never opens a network socket (enforced in `network_guard.py`)
+4. Never opens a non-localhost socket (`broadcast-due` → loopback Core only)
 
 Sparrow alone handles sync and broadcast. This tool is a local file processor.
 
@@ -66,15 +66,15 @@ Running the CLI locally on the user’s machine is fine **if** stdout/stderr is 
 
 ---
 
-## Zero-network contract (application)
+## Localhost-only contract (application)
 
-The **application** must never open sockets. Agents must not:
+The application may open sockets **only** to `127.0.0.1` and `::1` (optional `broadcast-due` → local Bitcoin Core). Agents must not:
 
-- Add `--allow-network` or similar escape hatches
-- Call Esplora, Electrum, mempool APIs, Bitcoin Core RPC, or Sparrow APIs
+- Add remote RPC hosts, `--allow-remote`, or public API clients
+- Call Esplora, Electrum, mempool APIs, or remote Bitcoin Core RPC
 - Add dependencies that phone home by default
 
-Sparrow is the only network boundary for the user’s workflow.
+Manual broadcast to remote nodes is via Sparrow only.
 
 ---
 
@@ -90,7 +90,7 @@ When the user asks for features, fixes, or workflow help:
 
 ### Planning checklist
 
-- [ ] Does the change preserve the zero-network guard?
+- [ ] Does the change preserve the localhost-only guard?
 - [ ] Could it leak wallet fields into logs or default CLI output?
 - [ ] Are tests using **synthetic** keys/addresses only (see `tests/conftest.py`)?
 - [ ] Does incomplete-drain behavior stay loud (banner, `SKIPPED-UTXOS.txt`, `I UNDERSTAND`)?
@@ -299,9 +299,11 @@ When launching Task/subagent/MCP workflows:
 | Command | Role |
 |---------|------|
 | `plan` | Read wallets, label UTXOs, preview mapping, save `labels-session.json` — no PSBT writes |
-| `generate` | PSBTs, BIP-329 exports, `schedule.yaml`, checklists |
+| `generate` | PSBTs, BIP-329 exports, `schedule.yaml`, `reminders.ics`, checklists |
 | `verify-manifest` | Validate signed PSBTs in `psbts_signed/` |
-| `remind` | Local-clock next broadcast hint from `schedule.yaml` |
+| `export-calendar` | Regenerate `reminders.ics` from `schedule.yaml` |
+| `broadcast-due` | Cron: broadcast due signed PSBTs via localhost Core RPC |
+| `remind` | Next manual broadcast hint (respects quiet hours) |
 | `wipe` | Clear RAM workspace |
 
 ---

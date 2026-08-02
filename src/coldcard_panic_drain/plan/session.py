@@ -27,13 +27,17 @@ class DrainSession:
     spread_hours: float
     utxos: list[dict[str, Any]] = field(default_factory=list)
     assignments: list[dict[str, Any]] = field(default_factory=list)
-    addresses_confirmed: bool = False
+    mapping_confirmed: bool = False
     dest_ownership_confirmed: bool = False
     dest_ownership_checked_index: int = -1
     dest_xpub: str = ""
     dest_fingerprint: str = ""
     source_xpub: str = ""
     source_fingerprint: str = ""
+    quiet_hours_start: Optional[str] = None
+    quiet_hours_end: Optional[str] = None
+    quiet_hours_timezone: Optional[str] = None
+    calendar_alarm_minutes: int = 15
 
     @classmethod
     def from_wallets(
@@ -43,7 +47,11 @@ class DrainSession:
         fee_base: int,
         fee_jitter: float,
         min_blocks_apart: int,
-    spread_hours: float,
+        spread_hours: float,
+        quiet_hours_start: Optional[str] = None,
+        quiet_hours_end: Optional[str] = None,
+        quiet_hours_timezone: Optional[str] = None,
+        calendar_alarm_minutes: int = 15,
     ) -> "DrainSession":
         return cls(
             source_path=source.path,
@@ -58,6 +66,10 @@ class DrainSession:
             dest_fingerprint=dest.keystore.fingerprint,
             source_xpub=source.keystore.xpub,
             source_fingerprint=source.keystore.fingerprint,
+            quiet_hours_start=quiet_hours_start,
+            quiet_hours_end=quiet_hours_end,
+            quiet_hours_timezone=quiet_hours_timezone,
+            calendar_alarm_minutes=calendar_alarm_minutes,
         )
 
     def save(self, path: Path) -> None:
@@ -66,7 +78,23 @@ class DrainSession:
     @classmethod
     def load(cls, path: Path) -> "DrainSession":
         data = json.loads(path.read_text(encoding="utf-8"))
+        data.setdefault("quiet_hours_start", None)
+        data.setdefault("quiet_hours_end", None)
+        data.setdefault("quiet_hours_timezone", None)
+        data.setdefault("calendar_alarm_minutes", 15)
+        if "mapping_confirmed" not in data and "addresses_confirmed" in data:
+            data["mapping_confirmed"] = data["addresses_confirmed"]
+        data.pop("addresses_confirmed", None)
         return cls(**data)
+
+    def quiet_hours(self):
+        from coldcard_panic_drain.schedule.quiet_hours import parse_quiet_hours
+
+        return parse_quiet_hours(
+            self.quiet_hours_start,
+            self.quiet_hours_end,
+            self.quiet_hours_timezone,
+        )
 
     def utxo_objects(self) -> list[UtxoRecord]:
         out: list[UtxoRecord] = []
@@ -122,10 +150,10 @@ class DrainSession:
                 "Destination wallet ownership was not confirmed during `plan`. "
                 "Re-run `plan` and complete the Wallet B ownership check."
             )
-        if not self.addresses_confirmed:
+        if not self.mapping_confirmed:
             raise ValueError(
-                "Destination addresses were not confirmed during `plan`. "
-                "Re-run `plan` and verify each mapped address on your signing device."
+                "UTXO mapping was not confirmed during `plan`. "
+                "Re-run `plan` and review the mapping table."
             )
 
     def verify_dest_wallet(self, dest: WalletSnapshot) -> None:

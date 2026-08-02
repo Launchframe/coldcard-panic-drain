@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import typer
-import yaml
 
+from coldcard_panic_drain.broadcast.core_rpc import CoreRpcClient
+from coldcard_panic_drain.broadcast.runner import FEE_URGENCY_BANNER, run_broadcast_due
 from coldcard_panic_drain.export.bip329 import write_wallet_a_labels, write_wallet_b_labels
 from coldcard_panic_drain.export.mapping_csv import write_mapping_csv
 from coldcard_panic_drain.export.post_flow import write_post_flow_checklist
@@ -18,7 +19,7 @@ from coldcard_panic_drain.export.warnings import (
     summarize_skips,
     write_skipped_utxos,
 )
-from coldcard_panic_drain.network_guard import enable_network_guard
+from coldcard_panic_drain.network_guard import enable_localhost_guard
 from coldcard_panic_drain.plan.labeling import (
     apply_frozen_exclusions,
     prompt_for_labels,
@@ -32,12 +33,17 @@ from coldcard_panic_drain.plan.mapper import (
 )
 from coldcard_panic_drain.plan.session import DrainSession, session_path
 from coldcard_panic_drain.psbt.builder import write_psbt_bundle
+from coldcard_panic_drain.schedule.ics_export import write_ics_calendar
+from coldcard_panic_drain.schedule.load import load_schedule
+from coldcard_panic_drain.schedule.quiet_hours import parse_quiet_hours
+from coldcard_panic_drain.schedule.remind_logic import compute_remind_status
 from coldcard_panic_drain.schedule.yaml_manifest import write_schedule
 from coldcard_panic_drain.sparrow.h2_reader import load_wallet
 from coldcard_panic_drain.sparrow.models import LabelSource
 from coldcard_panic_drain.util import sats_to_btc_str
 from coldcard_panic_drain.verify.checklist import write_verification_checklist
 from coldcard_panic_drain.verify.manifest import verify_signed_psbts
+from coldcard_panic_drain.verify.mapping import confirm_mapping_review
 from coldcard_panic_drain.verify.ownership import confirm_dest_wallet_ownership
 from coldcard_panic_drain.wipe import init_ram_workspace, wipe_workspace
 
@@ -92,32 +98,10 @@ def _print_mapping_table(assignments) -> None:
         )
 
 
-def _confirm_addresses(assignments, *, batch_after: int = 3) -> None:
-    if not assignments:
-        return
-    typer.echo("\nColdcard verification (Wallet B):")
-    typer.echo("Advanced → View Identity → Address — confirm each index matches.\n")
-    for i, a in enumerate(assignments):
-        typer.echo(f'Index {a.receive_index} | Label: "{a.utxo.label}"')
-        typer.echo(f"Address: {a.address}")
-        if i + 1 >= batch_after and i + 1 < len(assignments):
-            typer.echo(
-                f"\n({len(assignments) - i - 1} addresses remain. "
-                "Type CONFIRM to accept all remaining after verification on device.)"
-            )
-            reply = typer.prompt("Type CONFIRM", default="")
-            if reply.strip() != "CONFIRM":
-                raise typer.Exit("Aborted: address verification not confirmed.")
-            return
-        reply = typer.prompt("Type CONFIRM after verifying on Coldcard", default="")
-        if reply.strip() != "CONFIRM":
-            raise typer.Exit("Aborted: address verification not confirmed.")
-
-
 @app.callback()
 def main() -> None:
-    """Entry: enable zero-network guard and RAM workspace."""
-    enable_network_guard()
+    """Entry: localhost-only network guard and RAM workspace."""
+    enable_localhost_guard()
     init_ram_workspace()
 
 
@@ -130,8 +114,17 @@ def plan(
     fee_jitter: float = typer.Option(0.15, "--fee-jitter"),
     min_blocks_apart: int = typer.Option(2, "--min-blocks-apart"),
     spread_hours: float = typer.Option(48.0, "--spread-hours"),
+    dnd_start: Optional[str] = typer.Option(None, "--dnd-start", help="Quiet hours start HH:MM"),
+    dnd_end: Optional[str] = typer.Option(None, "--dnd-end", help="Quiet hours end HH:MM"),
+    timezone: Optional[str] = typer.Option(None, "--timezone", help="IANA tz for quiet hours"),
+    calendar_alarm_minutes: int = typer.Option(15, "--calendar-alarm-minutes"),
 ) -> None:
     """Read wallets, label UTXOs, preview mapping — no PSBT writes."""
+    try:
+        quiet_hours = parse_quiet_hours(dnd_start, dnd_end, timezone)
+    except ValueError as e:
+        typer.echo(f"ERROR: {e}", err=True)
+        raise typer.Exit(1) from e
     output.mkdir(parents=True, exist_ok=True)
     source_wallet, dest_wallet = _load_pair(source, dest)
 
@@ -162,7 +155,11 @@ def plan(
         raise typer.Exit(1)
 
     _print_mapping_table(assignments)
-    _confirm_addresses(assignments)
+    try:
+        confirm_mapping_review(len(assignments))
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
 
     session = DrainSession.from_wallets(
         source_wallet,
@@ -171,13 +168,17 @@ def plan(
         fee_jitter,
         min_blocks_apart,
         spread_hours,
+        quiet_hours_start=dnd_start,
+        quiet_hours_end=dnd_end,
+        quiet_hours_timezone=timezone,
+        calendar_alarm_minutes=calendar_alarm_minutes,
     )
     for u in utxos:
         session.update_utxo(u)
     session.set_assignments(assignments)
     session.dest_ownership_confirmed = True
     session.dest_ownership_checked_index = ownership_index
-    session.addresses_confirmed = True
+    session.mapping_confirmed = True
     session.save(session_path(output))
 
     typer.echo(f"\nSession saved to {session_path(output)}")
@@ -272,10 +273,18 @@ def generate(
     write_wallet_a_labels(output / "wallet-a-labels.jsonl", assignments, source_wallet)
     write_wallet_b_labels(output / "wallet-b-labels.jsonl", assignments, dest_wallet)
     write_mapping_csv(output / "mapping.csv", assignments, utxos)
-    write_schedule(
+    schedule_entries = write_schedule(
         output / "schedule.yaml",
         assignments,
         spread_hours=float(session.spread_hours),
+        quiet_hours=session.quiet_hours(),
+    )
+    write_ics_calendar(
+        output / "reminders.ics",
+        schedule_entries,
+        batch_name=output.name,
+        alarm_minutes=session.calendar_alarm_minutes,
+        timezone=session.quiet_hours_timezone,
     )
     write_verification_checklist(
         output / "verify" / "coldcard-checklist.txt",
@@ -289,6 +298,10 @@ def generate(
     session.save(sp)
 
     typer.echo(f"\nGenerated {len(assignments)} PSBTs in {output / 'psbts'}")
+    typer.echo(
+        "Coldcard signing: copy each .psbt from psbts/ to the ROOT of the microSD card "
+        "(not a subdirectory). Ready to Sign only scans the card root."
+    )
     print_incomplete_banner(summary, out=sys.stdout)
     typer.echo("\n" + (output / "POST-FLOW-CHECKLIST.txt").read_text(encoding="utf-8"))
 
@@ -306,29 +319,78 @@ def verify_manifest(
     typer.echo("All signed PSBTs match the generated manifest.")
 
 
-@app.command()
-def remind(
+@app.command("export-calendar")
+def export_calendar(
     output: Path = typer.Option(..., "--output", "-o"),
+    alarm_minutes: int = typer.Option(15, "--calendar-alarm-minutes"),
 ) -> None:
-    """Print the next PSBT due for broadcast (local clock only)."""
+    """Regenerate reminders.ics from schedule.yaml."""
     sched_path = output / "schedule.yaml"
     if not sched_path.is_file():
         typer.echo(f"Missing {sched_path}", err=True)
         raise typer.Exit(1)
-    doc = yaml.safe_load(sched_path.read_text(encoding="utf-8"))
-    now = datetime.now(timezone.utc)
-    entries = doc.get("entries") or []
-    for entry in entries:
-        not_before = datetime.fromisoformat(entry["broadcast_not_before"])
-        if not_before.tzinfo is None:
-            not_before = not_before.replace(tzinfo=timezone.utc)
-        signed = entry.get("signed", "")
-        signed_path = output / signed
-        if now >= not_before and not signed_path.is_file():
-            typer.echo(f"DUE NOW: {entry.get('label')} → {signed}")
-            typer.echo(f"  Broadcast not before: {entry['broadcast_not_before']}")
-            return
-    typer.echo("No overdue unsigned entries found. Check schedule.yaml for upcoming times.")
+    doc = load_schedule(sched_path)
+    qh = doc.get("quiet_hours") or {}
+    write_ics_calendar(
+        output / "reminders.ics",
+        doc.get("entries") or [],
+        batch_name=output.name,
+        alarm_minutes=alarm_minutes,
+        timezone=qh.get("timezone"),
+    )
+    typer.echo(f"Wrote {output / 'reminders.ics'}")
+
+
+@app.command("broadcast-due")
+def broadcast_due(
+    output: Path = typer.Option(..., "--output", "-o"),
+    rpc_url: str = typer.Option("http://127.0.0.1:8332", "--rpc-url"),
+    rpc_cookie_file: Optional[Path] = typer.Option(
+        Path("~/.bitcoin/.cookie"), "--rpc-cookie-file"
+    ),
+    rpc_user: Optional[str] = typer.Option(None, "--rpc-user"),
+    rpc_password: Optional[str] = typer.Option(None, "--rpc-password"),
+    max_count: int = typer.Option(1, "--max-count"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    skip_failed: bool = typer.Option(False, "--skip-failed"),
+) -> None:
+    """Broadcast due signed PSBTs via local Bitcoin Core (localhost RPC only)."""
+    typer.echo(FEE_URGENCY_BANNER, err=True)
+    try:
+        if rpc_user and rpc_password:
+            rpc = CoreRpcClient(rpc_url, user=rpc_user, password=rpc_password)
+        else:
+            rpc = CoreRpcClient(
+                rpc_url,
+                cookie_file=rpc_cookie_file.expanduser() if rpc_cookie_file else None,
+            )
+    except ValueError as e:
+        typer.echo(f"ERROR: {e}", err=True)
+        raise typer.Exit(1) from e
+    results = run_broadcast_due(
+        output,
+        rpc,
+        max_count=max_count,
+        dry_run=dry_run,
+        skip_failed=skip_failed,
+    )
+    if not results:
+        typer.echo("No due entries to broadcast.")
+        return
+    for r in results:
+        typer.echo(f"[{r.action}] order {r.order} {r.label}: {r.txid or r.detail}")
+
+
+@app.command()
+def remind(
+    output: Path = typer.Option(..., "--output", "-o"),
+) -> None:
+    """Print next broadcast reminder (respects quiet hours for manual mode)."""
+    sched_path = output / "schedule.yaml"
+    if not sched_path.is_file():
+        typer.echo(f"Missing {sched_path}", err=True)
+        raise typer.Exit(1)
+    typer.echo(compute_remind_status(output).message)
 
 
 @app.command()

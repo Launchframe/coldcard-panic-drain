@@ -44,9 +44,21 @@ def _chunked_xpub_responses(xpub: str):
         if "SUBSTRING" in sql and "extendedPublicKey" in sql:
             start = int(sql.split(", ")[1].split(",")[0])
             return [[xpub[start - 1 : start - 1 + chunk_size]]]
+        if "DISTINCT" in sql and "derivationPath" in sql and "blockTransactionHashIndex" in sql:
+            return [["m/84'/0'/0'/0/0"], ["m/84'/0'/0'/0/1"]]
+        if (
+            '"walletNode"' in sql
+            and "derivationPath" in sql
+            and "DISTINCT" not in sql
+            and "RAWTOHEX" not in sql
+            and "blockTransactionHashIndex" not in sql
+        ):
+            return [["m/84'/0'/0'/0/0"], ["m/84'/0'/0'/0/1"]]
         if "RAWTOHEX" in sql:
             assert '"wallet_master"."blockTransaction"' in sql
             assert '"wallet_master"."blockTransactionHashIndex"' in sql
+            assert '"spentBy"' in sql and "IS NULL" in sql
+            assert "NOT EXISTS" in sql
             return [
                 [
                     "ab" * 32,
@@ -56,12 +68,9 @@ def _chunked_xpub_responses(xpub: str):
                     "NULL",
                     "",
                     "1",
-                    "NULL",
                     "m/84'/0'/0'/0/0",
                 ]
             ]
-        if '"walletNode"' in sql and "derivationPath" in sql:
-            return [["m/84'/0'/0'/0/0"]]
         raise AssertionError(f"unexpected SQL: {sql[:120]}")
 
     return respond
@@ -87,6 +96,13 @@ def test_load_wallet_accepts_sparrow_p2wpkh_script_type(monkeypatch, format2_wal
     monkeypatch.setattr(h2_reader, "_query_rows", _chunked_xpub_responses(TEST_XPUB))
     wallet = load_wallet(format2_wallet_path)
     assert wallet.chain_tip_height == 900_000
+
+
+def test_load_wallet_collects_used_receive_from_tx_history(monkeypatch, format2_wallet_path: Path):
+    """Spent receives must still block reuse — not only walletNode gap entries."""
+    monkeypatch.setattr(h2_reader, "_query_rows", _chunked_xpub_responses(TEST_XPUB))
+    wallet = load_wallet(format2_wallet_path)
+    assert wallet.used_receive_indices == [0, 1]
 
 
 def test_load_wallet_rejects_non_p2wpkh_script_type(monkeypatch, format2_wallet_path: Path):
@@ -139,6 +155,22 @@ def test_load_wallet_reads_chunked_xpub(monkeypatch, format2_wallet_path: Path):
     monkeypatch.setattr(h2_reader, "_query_rows", _chunked_xpub_responses(long_xpub))
     wallet = load_wallet(format2_wallet_path)
     assert wallet.keystore.xpub == long_xpub
+
+
+def test_load_wallet_utxo_query_filters_spent_markers(monkeypatch, format2_wallet_path: Path):
+    """Exclude Sparrow spent-marker rows (spentBy IS NULL but referenced by another row)."""
+    seen_utxo_sql: list[str] = []
+
+    def capture(wallet_path: Path, sql: str) -> list[list[str]]:
+        if "RAWTOHEX" in sql:
+            seen_utxo_sql.append(sql)
+        return _chunked_xpub_responses(TEST_XPUB)(wallet_path, sql)
+
+    monkeypatch.setattr(h2_reader, "_query_rows", capture)
+    load_wallet(format2_wallet_path)
+    assert len(seen_utxo_sql) == 1
+    assert '"spentBy"' in seen_utxo_sql[0] and "IS NULL" in seen_utxo_sql[0]
+    assert "NOT EXISTS" in seen_utxo_sql[0]
 
 
 def test_load_wallet_raises_on_malformed_utxo_row(monkeypatch, format2_wallet_path: Path):

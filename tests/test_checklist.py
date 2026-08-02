@@ -9,7 +9,7 @@ from coldcard_panic_drain.verify.checklist import write_verification_checklist
 from conftest import make_test_wallet, make_test_wallet_b
 
 
-def test_checklist_notes_ownership_index(tmp_path: Path):
+def test_checklist_includes_signing_instructions(tmp_path: Path):
     source = make_test_wallet(path="/tmp/a.mv.db")
     dest = make_test_wallet_b(path="/tmp/b.mv.db")
     utxo = UtxoRecord(
@@ -34,4 +34,7 @@ def test_checklist_notes_ownership_index(tmp_path: Path):
     path = tmp_path / "checklist.txt"
     write_verification_checklist(path, assignments, dest, ownership_checked_index=0)
     text = path.read_text(encoding="utf-8")
-    assert "Ownership verified at plan for receive index 0" in text
+    assert "Wallet A" in text
+    assert "mapping.csv" in text
+    assert "Wallet B ownership was verified at plan" in text
+    assert assignments[0].psbt_filename in text
