@@ -29,6 +29,9 @@ SCRIPT_TYPE_P2WPKH = 6
 # Sparrow 2.x stores wallet tables in a dedicated schema (not PUBLIC).
 DEFAULT_SPARROW_SCHEMA = "wallet_master"
 
+# H2 Shell truncates each displayed column at ~100 characters.
+_VARCHAR_CHUNK_SIZE = 50
+
 _schema_cache: dict[str, str] = {}
 
 
@@ -151,6 +154,28 @@ def _parse_shell_output(stdout: str) -> list[list[str]]:
     return best
 
 
+def _fetch_column_chunks(
+    wallet_path: Path,
+    *,
+    column: str,
+    from_clause: str,
+) -> str:
+    """Read a VARCHAR column via chunked SUBSTRING (H2 Shell truncates wide columns)."""
+    col = _q(column)
+    len_rows = _query_rows(wallet_path, f"SELECT LENGTH({col}) {from_clause};")
+    if not len_rows or not len_rows[0][0] or len_rows[0][0].upper() == "NULL":
+        return ""
+    total = int(len_rows[0][0])
+    parts: list[str] = []
+    for start in range(1, total + 1, _VARCHAR_CHUNK_SIZE):
+        chunk_rows = _query_rows(
+            wallet_path,
+            f"SELECT SUBSTRING({col}, {start}, {_VARCHAR_CHUNK_SIZE}) {from_clause};",
+        )
+        parts.append(chunk_rows[0][0] if chunk_rows else "")
+    return "".join(parts)
+
+
 def _hex_txid(blob_hex: str) -> str:
     raw = bytes.fromhex(blob_hex.strip())
     return raw[::-1].hex()
@@ -206,13 +231,18 @@ def load_wallet(wallet_path: Path) -> WalletSnapshot:
 
     ks_rows = _query_rows(
         wallet_path,
-        f"SELECT {_q('masterFingerprint')}, {_q('derivationPath')}, {_q('extendedPublicKey')} "
+        f"SELECT {_q('masterFingerprint')}, {_q('derivationPath')} "
         f"FROM {keystore_tbl} WHERE {_q('wallet')} = {wallet_id} "
         f"ORDER BY {_q('index')} LIMIT 1;",
     )
     if not ks_rows:
         raise RuntimeError(f"No keystore in {wallet_path}")
-    fingerprint, deriv_path, xpub = ks_rows[0]
+    fingerprint, deriv_path = ks_rows[0]
+    ks_from = (
+        f"FROM {keystore_tbl} WHERE {_q('wallet')} = {wallet_id} "
+        f"ORDER BY {_q('index')} LIMIT 1"
+    )
+    xpub = _fetch_column_chunks(wallet_path, column="extendedPublicKey", from_clause=ks_from)
     if not xpub or xpub.upper() == "NULL":
         raise RuntimeError("Keystore has no extended public key (watch-only xpub required).")
     fingerprint = (fingerprint or "").strip().lower()
@@ -242,7 +272,7 @@ def load_wallet(wallet_path: Path) -> WalletSnapshot:
 
     utxo_sql = f"""
         SELECT
-            bt.{_q('txid')},
+            RAWTOHEX(bt.{_q('txid')}),
             bthi.{_q('index')},
             bthi.{_q('outputValue')},
             bthi.{_q('height')},
@@ -260,6 +290,11 @@ def load_wallet(wallet_path: Path) -> WalletSnapshot:
     utxo_rows = _query_rows(wallet_path, utxo_sql)
     utxos: list[UtxoRecord] = []
     for row in utxo_rows:
+        if len(row) != 9:
+            raise RuntimeError(
+                f"Malformed UTXO row from {wallet_path.name} ({len(row)} columns, expected 9). "
+                "Close Sparrow if the wallet is open, then retry."
+            )
         (
             txid_hex,
             vout,
