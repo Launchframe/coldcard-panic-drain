@@ -5,7 +5,6 @@ from __future__ import annotations
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import typer
 import yaml
@@ -39,6 +38,7 @@ from coldcard_panic_drain.sparrow.models import LabelSource
 from coldcard_panic_drain.util import sats_to_btc_str
 from coldcard_panic_drain.verify.checklist import write_verification_checklist
 from coldcard_panic_drain.verify.manifest import verify_signed_psbts
+from coldcard_panic_drain.verify.ownership import confirm_dest_wallet_ownership
 from coldcard_panic_drain.wipe import init_ram_workspace, wipe_workspace
 
 app = typer.Typer(
@@ -130,18 +130,16 @@ def plan(
     fee_jitter: float = typer.Option(0.15, "--fee-jitter"),
     min_blocks_apart: int = typer.Option(2, "--min-blocks-apart"),
     spread_hours: float = typer.Option(48.0, "--spread-hours"),
-    skip_confirm: bool = typer.Option(
-        False,
-        "--skip-address-confirm",
-        help=(
-            "Skip Coldcard confirm gate — DANGEROUS: PSBTs may send to unverified "
-            "addresses. Only use for automated testing with synthetic wallets."
-        ),
-    ),
 ) -> None:
     """Read wallets, label UTXOs, preview mapping — no PSBT writes."""
     output.mkdir(parents=True, exist_ok=True)
     source_wallet, dest_wallet = _load_pair(source, dest)
+
+    try:
+        ownership_index = confirm_dest_wallet_ownership(dest_wallet)
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
 
     utxos = source_wallet.utxos
     _mark_existing_labels(utxos)
@@ -164,8 +162,7 @@ def plan(
         raise typer.Exit(1)
 
     _print_mapping_table(assignments)
-    if not skip_confirm:
-        _confirm_addresses(assignments)
+    _confirm_addresses(assignments)
 
     session = DrainSession.from_wallets(
         source_wallet,
@@ -178,7 +175,9 @@ def plan(
     for u in utxos:
         session.update_utxo(u)
     session.set_assignments(assignments)
-    session.addresses_confirmed = not skip_confirm
+    session.dest_ownership_confirmed = True
+    session.dest_ownership_checked_index = ownership_index
+    session.addresses_confirmed = True
     session.save(session_path(output))
 
     typer.echo(f"\nSession saved to {session_path(output)}")
@@ -188,14 +187,6 @@ def plan(
 @app.command()
 def generate(
     output: Path = typer.Option(..., "--output", "-o"),
-    skip_confirm: bool = typer.Option(
-        False,
-        "--skip-address-confirm",
-        help=(
-            "Skip Coldcard confirm gate — DANGEROUS if plan also skipped confirmation. "
-            "Funds can be sent to wrong addresses without device verification."
-        ),
-    ),
     yes: bool = typer.Option(
         False,
         "--yes",
@@ -211,6 +202,12 @@ def generate(
         raise typer.Exit(1)
 
     session = DrainSession.load(sp)
+    try:
+        session.require_plan_gates()
+    except ValueError as e:
+        typer.echo(f"ERROR: {e}", err=True)
+        raise typer.Exit(1) from e
+
     source_wallet, dest_wallet = _load_pair(Path(session.source_path), Path(session.dest_path))
 
     try:
@@ -271,9 +268,6 @@ def generate(
             typer.echo(f"ERROR: {e}", err=True)
             raise typer.Exit(1) from e
 
-    if not session.addresses_confirmed and not skip_confirm:
-        _confirm_addresses(assignments)
-
     write_psbt_bundle(output, assignments, source_wallet, dest_wallet)
     write_wallet_a_labels(output / "wallet-a-labels.jsonl", assignments, source_wallet)
     write_wallet_b_labels(output / "wallet-b-labels.jsonl", assignments, dest_wallet)
@@ -287,11 +281,11 @@ def generate(
         output / "verify" / "coldcard-checklist.txt",
         assignments,
         dest_wallet,
+        ownership_checked_index=session.dest_ownership_checked_index,
     )
     write_skipped_utxos(output / "SKIPPED-UTXOS.txt", utxos)
     write_post_flow_checklist(output / "POST-FLOW-CHECKLIST.txt", summary)
     session.set_assignments(assignments)
-    session.addresses_confirmed = session.addresses_confirmed or not skip_confirm
     session.save(sp)
 
     typer.echo(f"\nGenerated {len(assignments)} PSBTs in {output / 'psbts'}")

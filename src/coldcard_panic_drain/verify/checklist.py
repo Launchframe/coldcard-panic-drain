@@ -12,15 +12,29 @@ def write_verification_checklist(
     path: Path,
     assignments: Iterable[DestinationAssignment],
     dest_wallet: WalletSnapshot,
+    *,
+    ownership_checked_index: int | None = None,
 ) -> None:
     account = dest_wallet.keystore.derivation_path.rstrip("/")
     lines = [
         "Coldcard address verification checklist (Wallet B)",
         f"Account: {account}",
         "",
-        "On Coldcard: Advanced → View Identity → Address → verify each index:",
-        "",
     ]
+    if ownership_checked_index is not None and ownership_checked_index >= 0:
+        lines.extend(
+            [
+                f"Ownership verified at plan for receive index {ownership_checked_index} "
+                "(Sparrow Wallet B file matches signing device).",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "On Coldcard: Advanced → View Identity → Address → verify each index:",
+            "",
+        ]
+    )
     for a in assignments:
         lines.append(f'Index {a.receive_index} | Label: "{a.utxo.label}"')
         lines.append(f"Address: {a.address}")

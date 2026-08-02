@@ -42,7 +42,8 @@ coldcard-panic-drain plan \
 - Lists all spendable UTXOs; prompts for labels on unlabeled coins.
 - Frozen UTXOs are excluded with loud warnings.
 - Skipping a UTXO triggers incomplete-drain warnings.
-- Verify destination addresses on Coldcard (Wallet B) when prompted.
+- **Required:** confirm Wallet B ownership (Sparrow file matches your signing device) before labeling.
+- **Required:** verify each mapped destination address on Coldcard (Wallet B) when prompted.
 
 ### 3. Generate outputs
 

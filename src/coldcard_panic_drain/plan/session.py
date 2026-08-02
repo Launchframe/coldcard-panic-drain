@@ -28,6 +28,8 @@ class DrainSession:
     utxos: list[dict[str, Any]] = field(default_factory=list)
     assignments: list[dict[str, Any]] = field(default_factory=list)
     addresses_confirmed: bool = False
+    dest_ownership_confirmed: bool = False
+    dest_ownership_checked_index: int = -1
     dest_xpub: str = ""
     dest_fingerprint: str = ""
     source_xpub: str = ""
@@ -112,6 +114,19 @@ class DrainSession:
             }
             for a in assignments
         ]
+
+    def require_plan_gates(self) -> None:
+        """Abort generate if mandatory human checks from `plan` were not completed."""
+        if not self.dest_ownership_confirmed:
+            raise ValueError(
+                "Destination wallet ownership was not confirmed during `plan`. "
+                "Re-run `plan` and complete the Wallet B ownership check."
+            )
+        if not self.addresses_confirmed:
+            raise ValueError(
+                "Destination addresses were not confirmed during `plan`. "
+                "Re-run `plan` and verify each mapped address on your signing device."
+            )
 
     def verify_dest_wallet(self, dest: WalletSnapshot) -> None:
         """Abort if Wallet B identity changed since plan (wallet-swap detection)."""
