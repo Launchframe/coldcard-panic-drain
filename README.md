@@ -1,0 +1,1 @@
+# coldcard-panic-drain
