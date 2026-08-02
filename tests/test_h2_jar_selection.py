@@ -15,6 +15,7 @@ from coldcard_panic_drain.sparrow.h2_reader import (
 
 
 def test_sparrow_p2wpkh_script_type_ordinal():
+    # Sparrow Drongo ScriptType.P2WPKH ordinal (not BIP number 84).
     assert SCRIPT_TYPE_P2WPKH == 6
 
 
