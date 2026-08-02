@@ -21,6 +21,15 @@ def write_post_flow_checklist(path: Path, skip_summary: SkipSummary) -> None:
         )
     lines.extend(
         [
+            "FEE URGENCY (especially if using broadcast-due cron)",
+            "  You are racing an attacker with the compromised seed.",
+            "  Set a competitive --fee-base at plan time — fees are fixed in signed PSBTs.",
+            "  If fees spike mid-drain: see docs/FEE-SPIKE-RECOVERY.md",
+            "",
+            "CALENDAR: import reminders.ics into Google Calendar / Outlook for manual broadcasts.",
+            "  Quiet hours (--dnd-start/--dnd-end) shift calendar alarms only.",
+            "  broadcast-due ignores quiet hours and may send txs overnight.",
+            "",
             "┌─────────────────────────────────────────────────────────────┐",
             "│  IMPORTANT: Re-import labels into Wallet A                  │",
             "│                                                             │",
@@ -36,7 +45,8 @@ def write_post_flow_checklist(path: Path, skip_summary: SkipSummary) -> None:
             "Signing: copy psbts/*.psbt to Coldcard microSD → Ready to Sign.",
             "Signed: place files in psbts_signed/ → follow schedule.yaml.",
             "",
-            "Broadcast: only Sparrow communicates over the wire.",
+            "Manual broadcast: open signed PSBT in Sparrow.",
+            "Auto broadcast: broadcast-due (local Bitcoin Core on 127.0.0.1 only).",
         ]
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

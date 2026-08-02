@@ -5,10 +5,15 @@ from __future__ import annotations
 import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 import yaml
 
+from coldcard_panic_drain.schedule.quiet_hours import (
+    QuietHours,
+    next_allowed_time,
+    quiet_hours_to_dict,
+)
 from coldcard_panic_drain.sparrow.models import DestinationAssignment
 
 
@@ -17,15 +22,16 @@ def write_schedule(
     assignments: Iterable[DestinationAssignment],
     *,
     spread_hours: float,
+    quiet_hours: Optional[QuietHours] = None,
     rng: random.Random | None = None,
-) -> None:
+) -> list[dict]:
+    """Write schedule.yaml; return entry dicts (for ICS export)."""
     rng = rng or random.Random()
     items = list(assignments)
     if not items:
         path.write_text("entries: []\n", encoding="utf-8")
-        return
+        return []
 
-    # shuffle broadcast order within value tiers (same sats bucket)
     tiers: dict[int, list[DestinationAssignment]] = {}
     for a in items:
         tiers.setdefault(a.utxo.value_sats, []).append(a)
@@ -37,9 +43,16 @@ def write_schedule(
 
     now = datetime.now(timezone.utc)
     step = timedelta(hours=spread_hours / max(len(ordered), 1))
-    entries = []
+    entries: list[dict] = []
+    last_assigned: Optional[datetime] = None
+
     for i, a in enumerate(ordered):
         t = now + step * i
+        if quiet_hours is not None:
+            t = next_allowed_time(t, quiet_hours)
+            if last_assigned is not None and t <= last_assigned:
+                t = next_allowed_time(last_assigned + step, quiet_hours)
+        last_assigned = t
         entries.append(
             {
                 "order": i + 1,
@@ -52,9 +65,14 @@ def write_schedule(
                 "utxo_ref": a.utxo.ref,
             }
         )
-    doc = {
+
+    doc: dict = {
         "generated_at": now.isoformat(),
         "spread_hours": spread_hours,
         "entries": entries,
     }
+    qh_doc = quiet_hours_to_dict(quiet_hours)
+    if qh_doc:
+        doc["quiet_hours"] = qh_doc
     path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    return entries

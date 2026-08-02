@@ -34,6 +34,10 @@ class DrainSession:
     dest_fingerprint: str = ""
     source_xpub: str = ""
     source_fingerprint: str = ""
+    quiet_hours_start: Optional[str] = None
+    quiet_hours_end: Optional[str] = None
+    quiet_hours_timezone: Optional[str] = None
+    calendar_alarm_minutes: int = 15
 
     @classmethod
     def from_wallets(
@@ -44,6 +48,10 @@ class DrainSession:
         fee_jitter: float,
         min_blocks_apart: int,
     spread_hours: float,
+        quiet_hours_start: Optional[str] = None,
+        quiet_hours_end: Optional[str] = None,
+        quiet_hours_timezone: Optional[str] = None,
+        calendar_alarm_minutes: int = 15,
     ) -> "DrainSession":
         return cls(
             source_path=source.path,
@@ -58,6 +66,10 @@ class DrainSession:
             dest_fingerprint=dest.keystore.fingerprint,
             source_xpub=source.keystore.xpub,
             source_fingerprint=source.keystore.fingerprint,
+            quiet_hours_start=quiet_hours_start,
+            quiet_hours_end=quiet_hours_end,
+            quiet_hours_timezone=quiet_hours_timezone,
+            calendar_alarm_minutes=calendar_alarm_minutes,
         )
 
     def save(self, path: Path) -> None:
@@ -66,7 +78,20 @@ class DrainSession:
     @classmethod
     def load(cls, path: Path) -> "DrainSession":
         data = json.loads(path.read_text(encoding="utf-8"))
+        data.setdefault("quiet_hours_start", None)
+        data.setdefault("quiet_hours_end", None)
+        data.setdefault("quiet_hours_timezone", None)
+        data.setdefault("calendar_alarm_minutes", 15)
         return cls(**data)
+
+    def quiet_hours(self):
+        from coldcard_panic_drain.schedule.quiet_hours import parse_quiet_hours
+
+        return parse_quiet_hours(
+            self.quiet_hours_start,
+            self.quiet_hours_end,
+            self.quiet_hours_timezone,
+        )
 
     def utxo_objects(self) -> list[UtxoRecord]:
         out: list[UtxoRecord] = []

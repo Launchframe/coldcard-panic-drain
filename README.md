@@ -2,7 +2,7 @@
 
 Offline CLI for migrating funds from a compromised Sparrow wallet (Wallet A) to a fresh wallet (Wallet B) without consolidating UTXOs or broadcasting in one shot.
 
-**Zero-network contract:** this tool never opens a socket. Sync Wallet A in Sparrow first, copy both `.mv.db` files locally, then run the tool. Only Sparrow talks to your node when you broadcast signed PSBTs.
+**Localhost-only contract:** wallet processing (`plan`, `generate`, etc.) is file-only. The only network use is optional `broadcast-due`, which talks to **Bitcoin Core on 127.0.0.1 / ::1** only. Remote nodes require manual broadcast in Sparrow.
 
 ## Requirements
 
@@ -36,7 +36,10 @@ coldcard-panic-drain plan \
   --fee-base 25 \
   --fee-jitter 0.15 \
   --min-blocks-apart 2 \
-  --spread-hours 48
+  --spread-hours 48 \
+  --dnd-start 22:00 \
+  --dnd-end 08:00 \
+  --timezone America/New_York
 ```
 
 - Lists all spendable UTXOs; prompts for labels on unlabeled coins.
@@ -62,9 +65,9 @@ If any UTXOs were excluded, you must type `I UNDERSTAND` to proceed.
 | `wallet-b-labels.jsonl` | Import into Wallet B before broadcast |
 | `mapping.csv` | Human audit trail |
 | `schedule.yaml` | Shuffled broadcast order + timing |
+| `reminders.ics` | Calendar import (Google / Outlook / Apple) |
 | `verify/coldcard-checklist.txt` | Address verification list |
 | `SKIPPED-UTXOS.txt` | Excluded coins (if any) |
-| `POST-FLOW-CHECKLIST.txt` | Post-migration reminders |
 
 ### 4. Sign on Coldcard
 
@@ -90,6 +93,25 @@ Open each signed PSBT in Sparrow after `broadcast_not_before` in `schedule.yaml`
 ```bash
 coldcard-panic-drain remind --output /Volumes/MICROSD/panic-batch-001
 ```
+
+### 8. Calendar reminders (manual broadcast)
+
+Import `reminders.ics` into your calendar app. Quiet hours (`--dnd-start` / `--dnd-end`) shift alarm times so you are not notified during sleep.
+
+```bash
+coldcard-panic-drain export-calendar --output /Volumes/MICROSD/panic-batch-001
+```
+
+### 9. Auto-broadcast (local Bitcoin Core only)
+
+Use competitive `--fee-base` at plan time — you are racing the attacker. See [docs/FEE-SPIKE-RECOVERY.md](docs/FEE-SPIKE-RECOVERY.md).
+
+```bash
+# Hourly cron — ignores quiet hours; may broadcast overnight
+0 * * * * coldcard-panic-drain broadcast-due -o /path/to/batch --max-count 1
+```
+
+`broadcast-state.yaml` tracks completed broadcasts and survives reboots.
 
 ## Reuse (Wallet B → Wallet C)
 
