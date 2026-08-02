@@ -21,3 +21,5 @@ def test_write_ics_calendar(tmp_path: Path):
     assert count_vevents(text) == 1
     assert "BEGIN:VALARM" in text
     assert "Broadcast: Test Coin" in text
+    assert "DESCRIPTION:Signed PSBT:" in text
+    assert "\\n" in text.split("DESCRIPTION:")[1]

@@ -42,7 +42,9 @@ def _signed_tx_hex(signed_psbt_path: Path) -> tuple[str, str]:
     tx = finalize_psbt(psbt)
     if tx is None:
         raise ValueError(f"Could not finalize signed PSBT: {signed_psbt_path.name}")
-    return tx.txid(), tx.serialize().hex()
+    txid = tx.txid()
+    txid_hex = txid.hex() if isinstance(txid, bytes) else str(txid)
+    return txid_hex, tx.serialize().hex()
 
 
 def run_broadcast_due(

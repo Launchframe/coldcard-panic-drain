@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from coldcard_panic_drain.broadcast.rpc_url import assert_loopback_rpc_url
+from coldcard_panic_drain.network_guard import NetworkBlockedError
 
 
 class CoreRpcError(RuntimeError):
@@ -27,6 +28,7 @@ class CoreRpcClient:
     ) -> None:
         self.url = assert_loopback_rpc_url(url)
         self._auth_header = self._build_auth(cookie_file, user, password)
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     @staticmethod
     def _build_auth(
@@ -35,7 +37,10 @@ class CoreRpcClient:
         password: Optional[str],
     ) -> str:
         if cookie_file is not None:
-            raw = cookie_file.expanduser().read_text(encoding="utf-8").strip()
+            try:
+                raw = cookie_file.expanduser().read_text(encoding="utf-8").strip()
+            except OSError as e:
+                raise ValueError(f"Cannot read RPC cookie file {cookie_file}: {e}") from e
             token = base64.b64encode(raw.encode()).decode()
             return f"Basic {token}"
         if user is not None and password is not None:
@@ -53,8 +58,13 @@ class CoreRpcClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with self._opener.open(req, timeout=60) as resp:
                 body = json.loads(resp.read().decode())
+        except NetworkBlockedError as e:
+            raise CoreRpcError(
+                "RPC blocked by zero-network guard (unexpected for loopback). "
+                "Disable proxy env vars or report a bug."
+            ) from e
         except urllib.error.HTTPError as e:
             raise CoreRpcError(f"RPC HTTP {e.code}: {e.read().decode()}") from e
         except urllib.error.URLError as e:

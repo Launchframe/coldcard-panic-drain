@@ -47,8 +47,8 @@ def write_ics_calendar(
         end = not_before + timedelta(minutes=event_minutes)
         uid = f"{batch_name}-{order}@coldcard-panic-drain"
         desc = (
-            f"Signed PSBT: {signed}\\n"
-            "Manual: open in Sparrow and broadcast.\\n"
+            f"Signed PSBT: {signed}\n"
+            "Manual: open in Sparrow and broadcast.\n"
             "Auto: coldcard-panic-drain broadcast-due (local Core only)."
         )
         start_key, start_val = _format_dt(not_before, timezone)
@@ -61,7 +61,7 @@ def write_ics_calendar(
                 f"{start_key}:{start_val}",
                 f"{end_key}:{end_val}",
                 f"SUMMARY:{_ics_escape(f'Broadcast: {label}')}",
-                f"DESCRIPTION:{desc}",
+                f"DESCRIPTION:{_ics_escape(desc)}",
             ]
         )
         if alarm_minutes > 0:

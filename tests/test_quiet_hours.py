@@ -1,5 +1,7 @@
 """Quiet hours scheduling tests."""
 
+import pytest
+
 from datetime import datetime, timezone
 
 from coldcard_panic_drain.schedule.quiet_hours import (
@@ -34,3 +36,9 @@ def test_parse_requires_all_fields():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_invalid_timezone_raises_value_error():
+    qh = QuietHours(start="22:00", end="08:00", timezone="Not/A/Timezone")
+    with pytest.raises(ValueError, match="Invalid timezone"):
+        qh.validate()

@@ -47,7 +47,7 @@ class DrainSession:
         fee_base: int,
         fee_jitter: float,
         min_blocks_apart: int,
-    spread_hours: float,
+        spread_hours: float,
         quiet_hours_start: Optional[str] = None,
         quiet_hours_end: Optional[str] = None,
         quiet_hours_timezone: Optional[str] = None,

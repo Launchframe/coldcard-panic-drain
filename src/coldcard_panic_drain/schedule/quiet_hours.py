@@ -17,7 +17,10 @@ class QuietHours:
     def validate(self) -> None:
         _parse_hhmm(self.start)
         _parse_hhmm(self.end)
-        ZoneInfo(self.timezone)
+        try:
+            ZoneInfo(self.timezone)
+        except KeyError as e:
+            raise ValueError(f"Invalid timezone {self.timezone!r}") from e
 
 
 def _parse_hhmm(s: str) -> time:
