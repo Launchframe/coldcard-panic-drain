@@ -1,0 +1,126 @@
+"""Drain session state persisted only in output dir."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any, Optional
+
+from coldcard_panic_drain.sparrow.models import (
+    DestinationAssignment,
+    LabelSource,
+    SkipReason,
+    UtxoRecord,
+    WalletSnapshot,
+)
+
+
+@dataclass
+class DrainSession:
+    source_path: str
+    dest_path: str
+    chain_tip_height: int
+    fee_base: int
+    fee_jitter: float
+    min_blocks_apart: int
+    spread_hours: float
+    utxos: list[dict[str, Any]] = field(default_factory=list)
+    assignments: list[dict[str, Any]] = field(default_factory=list)
+    addresses_confirmed: bool = False
+
+    @classmethod
+    def from_wallets(
+        cls,
+        source: WalletSnapshot,
+        dest: WalletSnapshot,
+        fee_base: int,
+        fee_jitter: float,
+        min_blocks_apart: int,
+    spread_hours: float,
+    ) -> "DrainSession":
+        return cls(
+            source_path=source.path,
+            dest_path=dest.path,
+            chain_tip_height=source.chain_tip_height,
+            fee_base=fee_base,
+            fee_jitter=fee_jitter,
+            min_blocks_apart=min_blocks_apart,
+            spread_hours=spread_hours,
+            utxos=[_utxo_to_dict(u) for u in source.utxos],
+        )
+
+    def save(self, path: Path) -> None:
+        path.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: Path) -> "DrainSession":
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return cls(**data)
+
+    def utxo_objects(self) -> list[UtxoRecord]:
+        out: list[UtxoRecord] = []
+        for d in self.utxos:
+            u = UtxoRecord(
+                txid=d["txid"],
+                vout=d["vout"],
+                value_sats=d["value_sats"],
+                height=d["height"],
+                received_at=None,
+                address=d["address"],
+                derivation_path=d["derivation_path"],
+                label=d.get("label", ""),
+                frozen=d.get("frozen", False),
+                included=d.get("included", True),
+            )
+            if d.get("skip_reason"):
+                u.skip_reason = SkipReason(d["skip_reason"])
+            if d.get("label_source"):
+                u.label_source = LabelSource(d["label_source"])
+            out.append(u)
+        return out
+
+    def update_utxo(self, utxo: UtxoRecord) -> None:
+        for d in self.utxos:
+            if d["txid"] == utxo.txid and d["vout"] == utxo.vout:
+                d["label"] = utxo.label
+                d["included"] = utxo.included
+                d["skip_reason"] = utxo.skip_reason.value if utxo.skip_reason else None
+                d["label_source"] = utxo.label_source.value if utxo.label_source else None
+                return
+        raise KeyError(utxo.ref)
+
+    def set_assignments(self, assignments: list[DestinationAssignment]) -> None:
+        self.assignments = [
+            {
+                "utxo_ref": a.utxo.ref,
+                "receive_index": a.receive_index,
+                "address": a.address,
+                "fee_sat_vb": a.fee_sat_vb,
+                "nlocktime": a.nlocktime,
+                "psbt_filename": a.psbt_filename,
+                "label": a.utxo.label,
+                "value_sats": a.utxo.value_sats,
+            }
+            for a in assignments
+        ]
+
+
+def _utxo_to_dict(u: UtxoRecord) -> dict[str, Any]:
+    return {
+        "txid": u.txid,
+        "vout": u.vout,
+        "value_sats": u.value_sats,
+        "height": u.height,
+        "address": u.address,
+        "derivation_path": u.derivation_path,
+        "label": u.label,
+        "frozen": u.frozen,
+        "included": u.included,
+        "skip_reason": u.skip_reason.value if u.skip_reason else None,
+        "label_source": u.label_source.value if u.label_source else None,
+    }
+
+
+def session_path(output_dir: Path) -> Path:
+    return output_dir / "labels-session.json"
