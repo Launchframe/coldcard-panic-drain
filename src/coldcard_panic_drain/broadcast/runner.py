@@ -11,6 +11,7 @@ from embit.finalizer import finalize_psbt
 from embit.psbt import PSBT
 
 from coldcard_panic_drain.broadcast.core_rpc import CoreRpcClient, CoreRpcError
+from coldcard_panic_drain.broadcast.paths import signed_path_under_output
 from coldcard_panic_drain.broadcast.state import BroadcastState, state_path
 from coldcard_panic_drain.schedule.load import load_schedule
 
@@ -21,19 +22,6 @@ FEE_URGENCY_BANNER = (
 )
 
 
-def _signed_path_under_output(output_dir: Path, signed_rel: str) -> Path:
-    """Resolve signed PSBT path; reject absolute paths and traversal outside output_dir."""
-    rel = (signed_rel or "").strip()
-    if not rel:
-        raise ValueError("schedule entry missing signed PSBT path")
-    rel_path = Path(rel)
-    if rel_path.is_absolute():
-        raise ValueError(f"signed path must be relative to output dir: {rel!r}")
-    resolved = (output_dir / rel_path).resolve()
-    base = output_dir.resolve()
-    if base not in resolved.parents and resolved != base:
-        raise ValueError(f"signed PSBT path escapes output directory: {rel!r}")
-    return resolved
 
 
 
@@ -95,7 +83,7 @@ def run_broadcast_due(
 
         signed_rel = entry.get("signed", "")
         try:
-            signed_path = _signed_path_under_output(output_dir, signed_rel)
+            signed_path = signed_path_under_output(output_dir, signed_rel)
         except ValueError as e:
             results.append(
                 BroadcastResult(order, label, "skipped", detail=str(e))

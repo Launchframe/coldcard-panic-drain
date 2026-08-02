@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from coldcard_panic_drain.broadcast.paths import signed_path_under_output
 from coldcard_panic_drain.broadcast.state import BroadcastState, state_path
 from coldcard_panic_drain.schedule.load import load_schedule, schedule_quiet_hours
 from coldcard_panic_drain.schedule.quiet_hours import in_quiet_hours, quiet_hours_end_display
@@ -32,8 +33,11 @@ def compute_remind_status(output_dir: Path, now: Optional[datetime] = None) -> R
         not_before = datetime.fromisoformat(entry["broadcast_not_before"])
         if not_before.tzinfo is None:
             not_before = not_before.replace(tzinfo=timezone.utc)
-        signed_path = output_dir / entry.get("signed", "")
-        has_signed = signed_path.is_file()
+        try:
+            signed_path = signed_path_under_output(output_dir, entry.get("signed", ""))
+            has_signed = signed_path.is_file()
+        except ValueError:
+            has_signed = False
 
         if now < not_before:
             if next_upcoming is None:
