@@ -13,6 +13,7 @@ from typing import Optional
 from coldcard_panic_drain.sparrow.models import KeystoreInfo, UtxoRecord, WalletSnapshot
 from coldcard_panic_drain.sparrow.receive import collect_used_receive_state, receive_index_from_path
 from coldcard_panic_drain.util import derive_address_for_chain_index, path_to_hardened
+from coldcard_panic_drain.wallet_path_guard import assert_wallet_path_allowed
 
 # Sparrow Status.FROZEN enum ordinal
 STATUS_FROZEN = 0
@@ -105,6 +106,7 @@ def _h2_jar_for_wallet(wallet_path: Path) -> Path:
 
 
 def _query_rows(wallet_path: Path, sql: str) -> list[list[str]]:
+    assert_wallet_path_allowed(wallet_path)
     h2_jar = _h2_jar_for_wallet(wallet_path)
     url = f"jdbc:h2:file:{_jdbc_base_path(wallet_path)};ACCESS_MODE_DATA=r"
     proc = subprocess.run(

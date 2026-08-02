@@ -64,6 +64,22 @@ Reading that file and returning rows, addresses, or labels is **not** allowed in
 
 Running the CLI locally on the user’s machine is fine **if** stdout/stderr is **not** copied into agent-router messages. Summarize outcomes in abstract terms: “plan completed, N PSBTs generated” without listing refs, amounts, or addresses.
 
+### Real-wallet path guard (enforced in code)
+
+`wallet_path_guard.py` blocks H2 reads of Sparrow `.mv.db` files unless:
+
+1. The path is under `tests/fixtures/` (synthetic stubs only), or
+2. The user invoked the Typer CLI (`enable_cli_wallet_access()` sets `COLDCARD_PANIC_DRAIN_ALLOW_REAL_WALLET=1`), or
+3. Tests call `disable_wallet_path_guard()` (pytest only).
+
+**Agents must never:**
+
+- Run `python -c "load_wallet(...)"` or `_query_rows(...)` against `~/.sparrow/wallets/`, `/tmp/*wallet*.mv.db`, or any non-fixture path
+- Set `COLDCARD_PANIC_DRAIN_ALLOW_REAL_WALLET=1` to bypass the guard for debugging
+- Copy Sparrow DBs to `/tmp` and query them from agent-driven shell commands
+
+Use mocked `_query_rows` / `make_test_wallet()` fixtures for H2 reader work. If a user needs a real-wallet smoke test, ask them to run `coldcard-panic-drain plan` locally and report only exit codes or abstract counts.
+
 ---
 
 ## Localhost-only contract (application)
@@ -92,6 +108,7 @@ When the user asks for features, fixes, or workflow help:
 
 - [ ] Does the change preserve the localhost-only guard?
 - [ ] Could it leak wallet fields into logs or default CLI output?
+- [ ] Does wallet-path guard still block agent-style `load_wallet` / `_query_rows` outside `tests/fixtures/`?
 - [ ] Are tests using **synthetic** keys/addresses only (see `tests/conftest.py`)?
 - [ ] Does incomplete-drain behavior stay loud (banner, `SKIPPED-UTXOS.txt`, `I UNDERSTAND`)?
 - [ ] Are Wallet A label re-import reminders preserved?
@@ -231,6 +248,7 @@ Report to the user/router: exit codes, test count, and `--help` subcommand names
 | `not BIP84` | P2SH/P2PKH Sparrow wallet | User needs BIP84 `bc1q` wallets |
 | `no stored block height` | Stale wallet file | User syncs in Sparrow, re-copies `.mv.db` |
 | `NetworkBlockedError` in tests | Guard left enabled | Expected in app; tests call `disable_network_guard()` where needed |
+| `RealWalletBlockedError` | Agent or script queried non-fixture `.mv.db` | Use `tests/fixtures/` stubs and mocks; never set `COLDCARD_PANIC_DRAIN_ALLOW_REAL_WALLET` for debugging |
 | Permission error on microSD | RO volume or macOS privacy | Remount RW; grant Full Disk Access if needed |
 
 ### 7. PyInstaller (optional packaging — not yet default)

@@ -15,7 +15,15 @@ from coldcard_panic_drain.sparrow.h2_reader import (
     _query_rows,
     load_wallet,
 )
+from coldcard_panic_drain.wallet_path_guard import disable_wallet_path_guard, enable_wallet_path_guard
 from conftest import TEST_FP, TEST_XPUB
+
+
+@pytest.fixture(autouse=True)
+def _allow_synthetic_wallet_paths():
+    disable_wallet_path_guard()
+    yield
+    enable_wallet_path_guard()
 
 
 def _write_format2_stub(path: Path) -> Path:
