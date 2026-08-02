@@ -28,6 +28,8 @@ class DrainSession:
     utxos: list[dict[str, Any]] = field(default_factory=list)
     assignments: list[dict[str, Any]] = field(default_factory=list)
     addresses_confirmed: bool = False
+    dest_xpub: str = ""
+    dest_fingerprint: str = ""
 
     @classmethod
     def from_wallets(
@@ -48,6 +50,8 @@ class DrainSession:
             min_blocks_apart=min_blocks_apart,
             spread_hours=spread_hours,
             utxos=[_utxo_to_dict(u) for u in source.utxos],
+            dest_xpub=dest.keystore.xpub,
+            dest_fingerprint=dest.keystore.fingerprint,
         )
 
     def save(self, path: Path) -> None:
@@ -104,6 +108,47 @@ class DrainSession:
             }
             for a in assignments
         ]
+
+    def verify_dest_wallet(self, dest: WalletSnapshot) -> None:
+        """Abort if Wallet B identity changed since plan (wallet-swap detection)."""
+        if not self.dest_xpub or not self.dest_fingerprint:
+            raise ValueError(
+                "Session missing destination wallet snapshot — re-run `plan` "
+                "to capture Wallet B xpub/fingerprint."
+            )
+        if dest.keystore.xpub != self.dest_xpub:
+            raise ValueError(
+                "Destination wallet xpub changed since plan — wrong Wallet B file "
+                "or keystore rotated. Re-run `plan` after confirming the correct wallet."
+            )
+        if dest.keystore.fingerprint != self.dest_fingerprint:
+            raise ValueError(
+                "Destination wallet fingerprint changed since plan — possible "
+                "wallet swap. Re-run `plan` with the intended Wallet B."
+            )
+
+    def assignment_objects(self, utxos: list[UtxoRecord]) -> list[DestinationAssignment]:
+        if not self.assignments:
+            raise ValueError("Session has no assignments — run `plan` first.")
+        utxo_by_ref = {u.ref: u for u in utxos}
+        out: list[DestinationAssignment] = []
+        for d in self.assignments:
+            u = utxo_by_ref.get(d["utxo_ref"])
+            if u is None:
+                raise ValueError(
+                    f"Session assignment references unknown UTXO {d['utxo_ref']}"
+                )
+            out.append(
+                DestinationAssignment(
+                    utxo=u,
+                    receive_index=d["receive_index"],
+                    address=d["address"],
+                    fee_sat_vb=d["fee_sat_vb"],
+                    nlocktime=d["nlocktime"],
+                    psbt_filename=d["psbt_filename"],
+                )
+            )
+        return out
 
 
 def _utxo_to_dict(u: UtxoRecord) -> dict[str, Any]:

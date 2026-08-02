@@ -22,6 +22,44 @@ def derive_receive_address(wallet: WalletSnapshot, index: int) -> str:
     return _account_descriptor(wallet).derive(0, index).address()
 
 
+def validate_dest_address(wallet: WalletSnapshot, index: int, address: str) -> None:
+    """Ensure address derives from Wallet B xpub at the given receive index."""
+    expected = derive_receive_address(wallet, index)
+    if expected != address:
+        raise ValueError(
+            f"Destination address at index {index} does not match Wallet B xpub "
+            f"(session/plan mismatch — aborting to prevent wrong outputs)"
+        )
+
+
+def compare_assignment_mapping(
+    session_assignments: Sequence[DestinationAssignment],
+    rebuilt: Sequence[DestinationAssignment],
+) -> list[str]:
+    """Compare utxo→(index, address) mapping; ignore fee jitter differences."""
+    errors: list[str] = []
+    if len(session_assignments) != len(rebuilt):
+        errors.append(
+            f"Assignment count mismatch: session={len(session_assignments)}, "
+            f"rebuilt={len(rebuilt)}"
+        )
+        return errors
+    sess_by_ref = {a.utxo.ref: a for a in session_assignments}
+    reb_by_ref = {a.utxo.ref: a for a in rebuilt}
+    if sess_by_ref.keys() != reb_by_ref.keys():
+        errors.append("UTXO set changed between session and current wallet state")
+        return errors
+    for ref, sa in sess_by_ref.items():
+        ra = reb_by_ref[ref]
+        if sa.receive_index != ra.receive_index:
+            errors.append(
+                f"{ref}: receive index changed ({sa.receive_index} vs {ra.receive_index})"
+            )
+        if sa.address != ra.address:
+            errors.append(f"{ref}: destination address changed since plan")
+    return errors
+
+
 def build_assignments(
     source_utxos: Sequence[UtxoRecord],
     dest_wallet: WalletSnapshot,

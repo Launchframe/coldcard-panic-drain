@@ -25,7 +25,11 @@ from coldcard_panic_drain.plan.labeling import (
     prompt_for_labels,
     validate_ready_for_generate,
 )
-from coldcard_panic_drain.plan.mapper import build_assignments
+from coldcard_panic_drain.plan.mapper import (
+    build_assignments,
+    compare_assignment_mapping,
+    validate_dest_address,
+)
 from coldcard_panic_drain.plan.session import DrainSession, session_path
 from coldcard_panic_drain.psbt.builder import write_psbt_bundle
 from coldcard_panic_drain.schedule.yaml_manifest import write_schedule
@@ -125,7 +129,14 @@ def plan(
     fee_jitter: float = typer.Option(0.15, "--fee-jitter"),
     min_blocks_apart: int = typer.Option(2, "--min-blocks-apart"),
     spread_hours: float = typer.Option(48.0, "--spread-hours"),
-    skip_confirm: bool = typer.Option(False, "--skip-address-confirm", help="Skip Coldcard confirm gate"),
+    skip_confirm: bool = typer.Option(
+        False,
+        "--skip-address-confirm",
+        help=(
+            "Skip Coldcard confirm gate — DANGEROUS: PSBTs may send to unverified "
+            "addresses. Only use for automated testing with synthetic wallets."
+        ),
+    ),
 ) -> None:
     """Read wallets, label UTXOs, preview mapping — no PSBT writes."""
     output.mkdir(parents=True, exist_ok=True)
@@ -176,7 +187,14 @@ def plan(
 @app.command()
 def generate(
     output: Path = typer.Option(..., "--output", "-o"),
-    skip_confirm: bool = typer.Option(False, "--skip-address-confirm"),
+    skip_confirm: bool = typer.Option(
+        False,
+        "--skip-address-confirm",
+        help=(
+            "Skip Coldcard confirm gate — DANGEROUS if plan also skipped confirmation. "
+            "Funds can be sent to wrong addresses without device verification."
+        ),
+    ),
     yes: bool = typer.Option(
         False,
         "--yes",
@@ -194,13 +212,26 @@ def generate(
     session = DrainSession.load(sp)
     source_wallet, dest_wallet = _load_pair(Path(session.source_path), Path(session.dest_path))
 
+    try:
+        session.verify_dest_wallet(dest_wallet)
+    except ValueError as e:
+        typer.echo(f"ERROR: {e}", err=True)
+        raise typer.Exit(1) from e
+
     utxos = session.utxo_objects()
     validate_ready_for_generate(utxos)
     summary = summarize_skips(utxos)
     if summary.incomplete and not yes:
         require_incomplete_acknowledgment(summary)
 
-    assignments = build_assignments(
+    try:
+        assignments = session.assignment_objects(utxos)
+    except ValueError as e:
+        typer.echo(f"ERROR: {e}", err=True)
+        raise typer.Exit(1) from e
+
+    # Defense in depth: rebuild mapping and abort if dest wallet state drifted.
+    rebuilt = build_assignments(
         utxos,
         dest_wallet,
         fee_base=session.fee_base,
@@ -208,14 +239,28 @@ def generate(
         chain_tip=session.chain_tip_height,
         min_blocks_apart=session.min_blocks_apart,
     )
-    if not assignments:
-        typer.echo("No UTXOs to generate.", err=True)
+    mapping_errors = compare_assignment_mapping(assignments, rebuilt)
+    if mapping_errors:
+        for err in mapping_errors:
+            typer.echo(f"ERROR: {err}", err=True)
+        typer.echo(
+            "Destination wallet state changed since plan (indices/addresses differ). "
+            "Re-run `plan` — do not generate PSBTs with stale assignments.",
+            err=True,
+        )
         raise typer.Exit(1)
+
+    for a in assignments:
+        try:
+            validate_dest_address(dest_wallet, a.receive_index, a.address)
+        except ValueError as e:
+            typer.echo(f"ERROR: {e}", err=True)
+            raise typer.Exit(1) from e
 
     if not session.addresses_confirmed and not skip_confirm:
         _confirm_addresses(assignments)
 
-    write_psbt_bundle(output, assignments, source_wallet)
+    write_psbt_bundle(output, assignments, source_wallet, dest_wallet)
     write_wallet_a_labels(output / "wallet-a-labels.jsonl", assignments, source_wallet)
     write_wallet_b_labels(output / "wallet-b-labels.jsonl", assignments, dest_wallet)
     write_mapping_csv(output / "mapping.csv", assignments, utxos)
@@ -232,7 +277,7 @@ def generate(
     write_skipped_utxos(output / "SKIPPED-UTXOS.txt", utxos)
     write_post_flow_checklist(output / "POST-FLOW-CHECKLIST.txt", summary)
     session.set_assignments(assignments)
-    session.addresses_confirmed = True
+    session.addresses_confirmed = session.addresses_confirmed or not skip_confirm
     session.save(sp)
 
     typer.echo(f"\nGenerated {len(assignments)} PSBTs in {output / 'psbts'}")
