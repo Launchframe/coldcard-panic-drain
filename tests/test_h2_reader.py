@@ -101,6 +101,29 @@ def test_load_wallet_rejects_non_p2wpkh_script_type(monkeypatch, format2_wallet_
         load_wallet(format2_wallet_path)
 
 
+def test_load_wallet_rejects_non_numeric_wallet_id(monkeypatch, format2_wallet_path: Path):
+    def respond(wallet_path: Path, sql: str) -> list[list[str]]:
+        handler = _chunked_xpub_responses(TEST_XPUB)
+        if '"scriptType"' in sql and '"wallet_master"."wallet"' in sql:
+            return [["1; DROP TABLE wallet; --", "synthetic", "900000", str(SCRIPT_TYPE_P2WPKH)]]
+        return handler(wallet_path, sql)
+
+    monkeypatch.setattr(h2_reader, "_query_rows", respond)
+    with pytest.raises(RuntimeError, match="Invalid wallet id"):
+        load_wallet(format2_wallet_path)
+
+
+def test_wallet_schema_rejects_unsafe_name(monkeypatch, format2_wallet_path: Path):
+    def respond(_wallet_path: Path, sql: str) -> list[list[str]]:
+        if "TABLE_SCHEMA" in sql:
+            return [['wallet"; DROP TABLE wallet; --']]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(h2_reader, "_query_rows", respond)
+    with pytest.raises(RuntimeError, match="Unsafe schema name"):
+        load_wallet(format2_wallet_path)
+
+
 def test_load_wallet_utxo_query_uses_rawtohex(monkeypatch, format2_wallet_path: Path):
     """Binary txid BLOBs break H2 Shell row parsing unless hex-encoded in SQL."""
     monkeypatch.setattr(h2_reader, "_query_rows", _chunked_xpub_responses(TEST_XPUB))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -34,9 +35,32 @@ _VARCHAR_CHUNK_SIZE = 50
 
 _schema_cache: dict[str, str] = {}
 
+# H2 / SQL identifiers from Sparrow schema discovery (not user-supplied CLI args).
+_SQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_MVSTORE_FORMAT_RE = re.compile(rb"format:(\d+),")
+
 
 def _q(ident: str) -> str:
     return f'"{ident}"'
+
+
+def _validate_sql_ident(ident: str, *, label: str) -> str:
+    ident = ident.strip()
+    if not _SQL_IDENT_RE.fullmatch(ident):
+        raise RuntimeError(
+            f"Unsafe {label} {ident!r} from wallet file. "
+            "Expected a Sparrow schema/table name."
+        )
+    return ident
+
+
+def _safe_sql_int(val: str, *, label: str) -> int:
+    try:
+        return int(val.strip())
+    except ValueError as e:
+        raise RuntimeError(
+            f"Invalid {label} {val!r} from wallet file (expected integer)."
+        ) from e
 
 
 def _tbl(schema: str, table: str) -> str:
@@ -57,8 +81,10 @@ def _detect_mvstore_format(wallet_path: Path) -> int:
         head = wallet_path.read_bytes()[:512]
     except OSError as e:
         raise RuntimeError(f"Cannot read wallet file {wallet_path}: {e}") from e
-    for fmt in (3, 2):
-        if f"format:{fmt}".encode() in head:
+    match = _MVSTORE_FORMAT_RE.search(head)
+    if match:
+        fmt = int(match.group(1))
+        if fmt in H2_JARS:
             return fmt
     raise RuntimeError(
         f"Unrecognized Sparrow/H2 file format in {wallet_path.name}. "
@@ -125,6 +151,7 @@ def _wallet_schema(wallet_path: Path) -> str:
         "ORDER BY TABLE_SCHEMA LIMIT 1;",
     )
     schema = rows[0][0].strip() if rows else DEFAULT_SPARROW_SCHEMA
+    schema = _validate_sql_ident(schema, label="schema name")
     _schema_cache[key] = schema
     return schema
 
@@ -216,7 +243,8 @@ def load_wallet(wallet_path: Path) -> WalletSnapshot:
     )
     if not wallet_rows:
         raise RuntimeError(f"No wallet table row in {wallet_path}")
-    wallet_id, name, stored_height, script_type = wallet_rows[0]
+    wallet_id_raw, name, stored_height, script_type = wallet_rows[0]
+    wallet_id = _safe_sql_int(wallet_id_raw, label="wallet id")
     if int(script_type) != SCRIPT_TYPE_P2WPKH:
         raise RuntimeError(
             f"Wallet {name} is not BIP84 P2WPKH (scriptType={script_type}). "

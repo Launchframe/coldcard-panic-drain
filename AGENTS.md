@@ -115,7 +115,7 @@ When the user asks for features, fixes, or workflow help:
 |------------|---------|---------|
 | **Python** | ≥ 3.11 (`requires-python` in `pyproject.toml`) | CLI, embit PSBT/descriptors, typer |
 | **Java** | JRE/JDK **11+** (17 LTS recommended) | `java` on `PATH`; invokes vendored H2 via `org.h2.tools.Shell` |
-| **H2 JAR** | `vendor/h2-2.1.214.jar` (Sparrow MVStore format 2) and `vendor/h2-2.2.224.jar` (format 3) | Read-only Sparrow `.mv.db` access — **do not** fetch at runtime |
+| **H2 JAR** | `vendor/h2-2.1.214.jar` (Sparrow MVStore format 2) and `vendor/h2-2.2.224.jar` (format 3) | Read-only Sparrow `.mv.db` access — **do not** fetch at runtime. Both JARs are dual-licensed (MPL 2.0 / EPL 1.0); ~2.5 MB each vendored in-repo. |
 | **pip packages** | `embit`, `typer`, `pyyaml` (+ `pytest` for dev) | Installed into project venv |
 
 ### Not required

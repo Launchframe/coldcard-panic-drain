@@ -2,12 +2,15 @@
 
 from pathlib import Path
 
+import pytest
+
 from coldcard_panic_drain.sparrow.h2_reader import (
     H2_JARS,
     SCRIPT_TYPE_P2WPKH,
     _detect_mvstore_format,
     _h2_jar_for_wallet,
     _parse_shell_output,
+    _validate_sql_ident,
 )
 
 
@@ -27,6 +30,23 @@ def test_detect_format_3(tmp_path: Path):
     f.write_bytes(b"H:2,block:3,format:3,version:1," + b"\x00" * 100)
     assert _detect_mvstore_format(f) == 3
     assert _h2_jar_for_wallet(f).name == "h2-2.2.224.jar"
+
+
+def test_detect_format_20_not_confused_with_format_2(tmp_path: Path):
+    """Substring 'format:2' must not match inside 'format:20,'."""
+    f = tmp_path / "future.mv.db"
+    f.write_bytes(b"H:2,block:20,format:20,version:1," + b"\x00" * 100)
+    with pytest.raises(RuntimeError, match="Unrecognized Sparrow/H2 file format"):
+        _detect_mvstore_format(f)
+
+
+def test_validate_sql_ident_accepts_wallet_master():
+    assert _validate_sql_ident("wallet_master", label="schema name") == "wallet_master"
+
+
+def test_validate_sql_ident_rejects_injection():
+    with pytest.raises(RuntimeError, match="Unsafe schema name"):
+        _validate_sql_ident('wallet"; DROP TABLE wallet; --', label="schema name")
 
 
 def test_jars_exist():
