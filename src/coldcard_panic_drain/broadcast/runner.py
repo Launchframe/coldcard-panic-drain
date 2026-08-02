@@ -21,6 +21,22 @@ FEE_URGENCY_BANNER = (
 )
 
 
+def _signed_path_under_output(output_dir: Path, signed_rel: str) -> Path:
+    """Resolve signed PSBT path; reject absolute paths and traversal outside output_dir."""
+    rel = (signed_rel or "").strip()
+    if not rel:
+        raise ValueError("schedule entry missing signed PSBT path")
+    rel_path = Path(rel)
+    if rel_path.is_absolute():
+        raise ValueError(f"signed path must be relative to output dir: {rel!r}")
+    resolved = (output_dir / rel_path).resolve()
+    base = output_dir.resolve()
+    if base not in resolved.parents and resolved != base:
+        raise ValueError(f"signed PSBT path escapes output directory: {rel!r}")
+    return resolved
+
+
+
 @dataclass
 class BroadcastResult:
     order: int
@@ -80,7 +96,13 @@ def run_broadcast_due(
             continue
 
         signed_rel = entry.get("signed", "")
-        signed_path = output_dir / signed_rel
+        try:
+            signed_path = _signed_path_under_output(output_dir, signed_rel)
+        except ValueError as e:
+            results.append(
+                BroadcastResult(order, label, "skipped", detail=str(e))
+            )
+            continue
         if not signed_path.is_file():
             results.append(
                 BroadcastResult(order, label, "skipped", detail="signed PSBT missing")
