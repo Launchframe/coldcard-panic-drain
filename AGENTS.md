@@ -115,7 +115,7 @@ When the user asks for features, fixes, or workflow help:
 |------------|---------|---------|
 | **Python** | ≥ 3.11 (`requires-python` in `pyproject.toml`) | CLI, embit PSBT/descriptors, typer |
 | **Java** | JRE/JDK **11+** (17 LTS recommended) | `java` on `PATH`; invokes vendored H2 via `org.h2.tools.Shell` |
-| **H2 JAR** | `vendor/h2-2.2.224.jar` (bundled) | Read-only Sparrow `.mv.db` access — **do not** fetch at runtime |
+| **H2 JAR** | `vendor/h2-2.1.214.jar` (Sparrow MVStore format 2) and `vendor/h2-2.2.224.jar` (format 3) | Read-only Sparrow `.mv.db` access — **do not** fetch at runtime. Both JARs are dual-licensed (MPL 2.0 / EPL 1.0); ~2.5 MB each vendored in-repo. |
 | **pip packages** | `embit`, `typer`, `pyyaml` (+ `pytest` for dev) | Installed into project venv |
 
 ### Not required
@@ -196,7 +196,7 @@ which java    # macOS/Linux
 Smoke-test H2 (no wallet file — only checks JAR + Java):
 
 ```bash
-java -cp vendor/h2-2.2.224.jar org.h2.tools.Shell -help
+java -cp vendor/h2-2.1.214.jar org.h2.tools.Shell -help
 ```
 
 Expect help text, not `FileNotFoundError` for the JAR. If JAR missing, it must ship with the repo under `vendor/` — do not download during a drain run.
@@ -226,7 +226,7 @@ Report to the user/router: exit codes, test count, and `--help` subcommand names
 | Symptom | Likely cause | Fix |
 |---------|----------------|-----|
 | `python3` is 3.8/3.9 | macOS system Python | Use `python3.12 -m venv .venv` |
-| `H2 JAR not found` | Missing `vendor/h2-2.2.224.jar` | Restore from repo checkout |
+| `H2 JAR not found` | Missing `vendor/h2-2.1.214.jar` or `vendor/h2-2.2.224.jar` | Restore from repo checkout |
 | `H2 query failed` | No Java, bad path, corrupt `.mv.db` | Fix Java; verify **path** to `.mv.db`; do not paste SQL rows |
 | `not BIP84` | P2SH/P2PKH Sparrow wallet | User needs BIP84 `bc1q` wallets |
 | `no stored block height` | Stale wallet file | User syncs in Sparrow, re-copies `.mv.db` |
@@ -238,7 +238,7 @@ Report to the user/router: exit codes, test count, and `--help` subcommand names
 When implementing one-file binaries:
 
 - Build on the **same OS** you ship for (darwin → macOS, linux → linux)
-- Bundle `vendor/h2-2.2.224.jar` as a data file; Java must still exist on target host unless you also ship a JRE (out of scope unless requested)
+- Bundle both H2 JARs as data files; Java must still exist on target host unless you also ship a JRE (out of scope unless requested)
 - Document that **Java remains an external dependency** for H2 reads
 
 ---
@@ -262,7 +262,7 @@ pytest -q
 coldcard-panic-drain --help
 ```
 
-Java + `vendor/h2-2.2.224.jar` required for Sparrow DB reads.
+Java + vendored H2 JARs (`h2-2.1.214` for Sparrow wallets, `h2-2.2.224` for format 3) required for Sparrow DB reads.
 
 ### Code conventions
 
