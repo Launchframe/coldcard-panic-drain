@@ -33,6 +33,7 @@ def make_test_wallet(**kwargs) -> WalletSnapshot:
         chain_tip_height=900_000,
         keystore=ks,
         used_receive_indices=[],
+        used_receive_addresses=[],
     )
     defaults.update(kwargs)
     return WalletSnapshot(**defaults)
@@ -51,6 +52,7 @@ def make_test_wallet_b(**kwargs) -> WalletSnapshot:
         chain_tip_height=900_000,
         keystore=ks,
         used_receive_indices=[],
+        used_receive_addresses=[],
     )
     defaults.update(kwargs)
     return WalletSnapshot(**defaults)

@@ -298,6 +298,10 @@ def generate(
     session.save(sp)
 
     typer.echo(f"\nGenerated {len(assignments)} PSBTs in {output / 'psbts'}")
+    typer.echo(
+        "Coldcard signing: copy each .psbt from psbts/ to the ROOT of the microSD card "
+        "(not a subdirectory). Ready to Sign only scans the card root."
+    )
     print_incomplete_banner(summary, out=sys.stdout)
     typer.echo("\n" + (output / "POST-FLOW-CHECKLIST.txt").read_text(encoding="utf-8"))
 

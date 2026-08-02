@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from coldcard_panic_drain.sparrow.models import KeystoreInfo, UtxoRecord, WalletSnapshot
+from coldcard_panic_drain.sparrow.receive import collect_used_receive_state, receive_index_from_path
 from coldcard_panic_drain.util import derive_address_for_chain_index, path_to_hardened
 
 # Sparrow Status.FROZEN enum ordinal
@@ -281,22 +282,24 @@ def load_wallet(wallet_path: Path) -> WalletSnapshot:
         origin=_build_origin(fingerprint, deriv_path),
     )
 
-    # Used receive indices: external chain paths m/84'/0'/0'/0/i
+    # Any receive index that ever got an on-chain credit (spent or unspent).
+    receive_history_sql = f"""
+        SELECT DISTINCT wn.{_q('derivationPath')}
+        FROM {bthi_tbl} bthi
+        JOIN {block_tx_tbl} bt ON bt.{_q('hash')} = bthi.{_q('hash')}
+        JOIN {wallet_node_tbl} wn ON wn.{_q('id')} = bthi.{_q('node')}
+        WHERE bt.{_q('wallet')} = {wallet_id}
+    """
+    receive_rows = _query_rows(wallet_path, receive_history_sql)
     node_rows = _query_rows(
         wallet_path,
         f"SELECT {_q('derivationPath')} FROM {wallet_node_tbl} "
-        f"WHERE {_q('wallet')} = {wallet_id} "
-        f"AND {_q('derivationPath')} LIKE '%/0/%' "
-        f"ORDER BY {_q('id')};",
+        f"WHERE {_q('wallet')} = {wallet_id};",
     )
-    used_receive: list[int] = []
-    for (path,) in node_rows:
-        parts = path.strip().split("/")
-        if len(parts) >= 6 and parts[-2] == "0":
-            try:
-                used_receive.append(int(parts[-1]))
-            except ValueError:
-                pass
+    all_paths = {row[0] for row in receive_rows + node_rows if row and row[0]}
+    used_receive_indices, used_receive_addresses = collect_used_receive_state(
+        keystore, sorted(all_paths)
+    )
 
     utxo_sql = f"""
         SELECT
@@ -307,20 +310,24 @@ def load_wallet(wallet_path: Path) -> WalletSnapshot:
             bthi.{_q('date')},
             bthi.{_q('label')},
             bthi.{_q('status')},
-            bthi.{_q('spentBy')},
             wn.{_q('derivationPath')}
         FROM {bthi_tbl} bthi
         JOIN {block_tx_tbl} bt ON bt.{_q('hash')} = bthi.{_q('hash')}
         JOIN {wallet_node_tbl} wn ON wn.{_q('id')} = bthi.{_q('node')}
         WHERE bt.{_q('wallet')} = {wallet_id}
+          AND bthi.{_q('spentBy')} IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM {bthi_tbl} spent_marker
+            WHERE spent_marker.{_q('spentBy')} = bthi.{_q('id')}
+          )
         ORDER BY bthi.{_q('outputValue')} DESC;
     """
     utxo_rows = _query_rows(wallet_path, utxo_sql)
     utxos: list[UtxoRecord] = []
     for row in utxo_rows:
-        if len(row) != 9:
+        if len(row) != 8:
             raise RuntimeError(
-                f"Malformed UTXO row from {wallet_path.name} ({len(row)} columns, expected 9). "
+                f"Malformed UTXO row from {wallet_path.name} ({len(row)} columns, expected 8). "
                 "Close Sparrow if the wallet is open, then retry."
             )
         (
@@ -331,11 +338,8 @@ def load_wallet(wallet_path: Path) -> WalletSnapshot:
             date_s,
             label,
             status,
-            spent_by,
             deriv_path,
         ) = row
-        if spent_by and spent_by.upper() != "NULL":
-            continue
         frozen = status.strip() == str(STATUS_FROZEN)
         address = _derive_address_from_path(keystore, deriv_path.strip())
         utxos.append(
@@ -352,13 +356,22 @@ def load_wallet(wallet_path: Path) -> WalletSnapshot:
             )
         )
 
+    for utxo in utxos:
+        idx = receive_index_from_path(utxo.derivation_path)
+        if idx is not None:
+            used_receive_indices.append(idx)
+            used_receive_addresses.append(utxo.address)
+    used_receive_indices = sorted(set(used_receive_indices))
+    used_receive_addresses = sorted(set(used_receive_addresses))
+
     return WalletSnapshot(
         path=str(wallet_path),
         name=name,
         chain_tip_height=chain_tip,
         keystore=keystore,
         utxos=utxos,
-        used_receive_indices=sorted(set(used_receive)),
+        used_receive_indices=used_receive_indices,
+        used_receive_addresses=used_receive_addresses,
     )
 
 

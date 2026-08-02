@@ -6,6 +6,7 @@ import random
 from typing import Sequence
 
 from coldcard_panic_drain.sparrow.models import DestinationAssignment, UtxoRecord, WalletSnapshot
+from coldcard_panic_drain.sparrow.receive import next_free_receive_index, used_receive_sets
 from coldcard_panic_drain.util import derive_address_for_chain_index, sanitize_label
 
 
@@ -128,17 +129,20 @@ def build_assignments(
     included = [u for u in source_utxos if u.included and not u.frozen]
     included.sort(key=lambda u: u.value_sats, reverse=True)
 
-    start_index = dest_wallet.next_receive_index
-    # avoid collision with already-used indices
-    used = set(dest_wallet.used_receive_indices)
+    used_indices, used_addresses = used_receive_sets(dest_wallet)
     assignments: list[DestinationAssignment] = []
     slug_counts: dict[str, int] = {}
 
-    idx = start_index
+    idx = next_free_receive_index(dest_wallet)
     for order, utxo in enumerate(included):
-        while idx in used:
+        while idx in used_indices or derive_receive_address(dest_wallet, idx) in used_addresses:
             idx += 1
         address = derive_receive_address(dest_wallet, idx)
+        if address in used_addresses:
+            raise RuntimeError(
+                f"Wallet B receive index {idx} collides with a previously used address. "
+                "Re-sync Wallet B in Sparrow, re-copy the .mv.db, and re-run plan."
+            )
         jitter = rng.uniform(-fee_jitter, fee_jitter)
         fee_sat_vb = max(1, round(fee_base * (1 + jitter)))
         nlocktime = chain_tip + (order + 1) * min_blocks_apart
@@ -157,6 +161,7 @@ def build_assignments(
                 psbt_filename=psbt_name,
             )
         )
-        used.add(idx)
+        used_indices.add(idx)
+        used_addresses.add(address)
         idx += 1
     return assignments

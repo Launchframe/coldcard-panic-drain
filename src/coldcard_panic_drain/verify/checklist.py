@@ -26,6 +26,9 @@ def write_verification_checklist(
         "",
         "Do NOT sign if the destination does not match Wallet B.",
         "",
+        "Before signing: copy each .psbt from psbts/ to the ROOT of the microSD card.",
+        "Ready to Sign does not scan subdirectories on the card.",
+        "",
     ]
     if ownership_checked_index is not None and ownership_checked_index >= 0:
         lines.extend(

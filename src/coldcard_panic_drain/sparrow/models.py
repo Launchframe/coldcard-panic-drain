@@ -61,12 +61,14 @@ class WalletSnapshot:
     keystore: KeystoreInfo
     utxos: list[UtxoRecord] = field(default_factory=list)
     used_receive_indices: list[int] = field(default_factory=list)
+    used_receive_addresses: list[str] = field(default_factory=list)
 
     @property
     def next_receive_index(self) -> int:
-        if not self.used_receive_indices:
-            return 0
-        return max(self.used_receive_indices) + 1
+        """Smallest external receive index with no prior on-chain use."""
+        from coldcard_panic_drain.sparrow.receive import next_free_receive_index
+
+        return next_free_receive_index(self)
 
 
 @dataclass

@@ -69,11 +69,12 @@ If any UTXOs were excluded, you must type `I UNDERSTAND` to proceed.
 | `verify/coldcard-checklist.txt` | Address verification list |
 | `SKIPPED-UTXOS.txt` | Excluded coins (if any) |
 
-### 4. Sign on Coldcard
+### 4. Sign on Coldcard (Wallet A)
 
-1. Copy `psbts/*.psbt` to microSD root.
-2. Coldcard → **Ready to Sign** → sign each file.
-3. Copy `*-signed.psbt` to `psbts_signed/` on the output volume.
+1. Copy each file from `psbts/` to the **root** of the microSD card (not a subfolder).
+2. Coldcard → **Ready to Sign** — it only lists `.psbt` files in the card root directory.
+3. For **each** PSBT, verify the destination address on the device and in Sparrow Wallet B before signing.
+4. Copy `*-signed.psbt` to `psbts_signed/` on the output volume.
 
 ### 5. Verify signed PSBTs
 
