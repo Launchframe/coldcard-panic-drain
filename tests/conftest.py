@@ -5,14 +5,19 @@ from embit import bip32
 from coldcard_panic_drain.sparrow.models import KeystoreInfo, WalletSnapshot
 
 _SEED = b"panic-drain-test-seed-32-bytes!!"
-_ACCOUNT = bip32.HDKey.from_seed(_SEED).derive("m/84'/0'/0'")
-TEST_XPUB = _ACCOUNT.to_base58()
-TEST_FP = _ACCOUNT.fingerprint.hex()
+_ROOT = bip32.HDKey.from_seed(_SEED)
+_ACCOUNT = _ROOT.derive("m/84'/0'/0'")
+# Sparrow only ever exports a watch-only xpub — never derive test fixtures from
+# the private account key, or bugs that only manifest for real (public-only)
+# xpubs (e.g. HDKey.key being a PublicKey vs. PrivateKey) go unnoticed in tests.
+TEST_XPUB = _ACCOUNT.to_public().to_base58()
+TEST_FP = _ROOT.my_fingerprint.hex()
 
 _SEED_B = b"panic-drain-wallet-b-seed-32byte"
-_ACCOUNT_B = bip32.HDKey.from_seed(_SEED_B).derive("m/84'/0'/0'")
-TEST_XPUB_B = _ACCOUNT_B.to_base58()
-TEST_FP_B = _ACCOUNT_B.fingerprint.hex()
+_ROOT_B = bip32.HDKey.from_seed(_SEED_B)
+_ACCOUNT_B = _ROOT_B.derive("m/84'/0'/0'")
+TEST_XPUB_B = _ACCOUNT_B.to_public().to_base58()
+TEST_FP_B = _ROOT_B.my_fingerprint.hex()
 
 
 def make_test_wallet(**kwargs) -> WalletSnapshot:

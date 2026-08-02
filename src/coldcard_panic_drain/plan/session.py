@@ -30,6 +30,8 @@ class DrainSession:
     addresses_confirmed: bool = False
     dest_xpub: str = ""
     dest_fingerprint: str = ""
+    source_xpub: str = ""
+    source_fingerprint: str = ""
 
     @classmethod
     def from_wallets(
@@ -52,6 +54,8 @@ class DrainSession:
             utxos=[_utxo_to_dict(u) for u in source.utxos],
             dest_xpub=dest.keystore.xpub,
             dest_fingerprint=dest.keystore.fingerprint,
+            source_xpub=source.keystore.xpub,
+            source_fingerprint=source.keystore.fingerprint,
         )
 
     def save(self, path: Path) -> None:
@@ -125,6 +129,30 @@ class DrainSession:
             raise ValueError(
                 "Destination wallet fingerprint changed since plan — possible "
                 "wallet swap. Re-run `plan` with the intended Wallet B."
+            )
+
+    def verify_source_wallet(self, source: WalletSnapshot) -> None:
+        """Abort if Wallet A identity changed since plan (source wallet-swap detection).
+
+        Mirrors `verify_dest_wallet`. Without this, swapping `--source` (or the
+        file at that path) between `plan` and `generate` would silently build
+        PSBTs against session-cached UTXO data that no longer matches the wallet
+        actually loaded — the prior pass only snapshotted the destination side.
+        """
+        if not self.source_xpub or not self.source_fingerprint:
+            raise ValueError(
+                "Session missing source wallet snapshot — re-run `plan` "
+                "to capture Wallet A xpub/fingerprint."
+            )
+        if source.keystore.xpub != self.source_xpub:
+            raise ValueError(
+                "Source wallet xpub changed since plan — wrong Wallet A file "
+                "or keystore rotated. Re-run `plan` after confirming the correct wallet."
+            )
+        if source.keystore.fingerprint != self.source_fingerprint:
+            raise ValueError(
+                "Source wallet fingerprint changed since plan — possible "
+                "wallet swap. Re-run `plan` with the intended Wallet A."
             )
 
     def assignment_objects(self, utxos: list[UtxoRecord]) -> list[DestinationAssignment]:

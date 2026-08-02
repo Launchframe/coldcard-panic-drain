@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from coldcard_panic_drain.sparrow.models import KeystoreInfo, UtxoRecord, WalletSnapshot
-from coldcard_panic_drain.util import path_to_hardened
+from coldcard_panic_drain.util import derive_address_for_chain_index
 
 # Sparrow Status.FROZEN enum ordinal
 STATUS_FROZEN = 0
@@ -218,15 +218,19 @@ def load_wallet(wallet_path: Path) -> WalletSnapshot:
 
 
 def _derive_address_from_path(keystore: KeystoreInfo, node_path: str) -> str:
-    """Derive bc1q address for a wallet node path using embit."""
-    from embit.descriptor import Descriptor
+    """Derive bc1q address for a wallet node path using embit.
 
-    # account-level descriptor /0/*
-    account_path = keystore.derivation_path.rstrip("/")
-    desc_str = f"wpkh([{keystore.fingerprint}/{path_to_hardened(account_path)}]{keystore.xpub}/0/*)"
-    desc = Descriptor.from_string(desc_str)
+    CRITICAL FIX (Real Steel pass 2 / Sonnet): the previous implementation always
+    built a descriptor hardcoded to chain "0" and called
+    ``desc.derive(chain, idx)``, which fills the descriptor's *wildcard* from the
+    first argument (`chain`) and silently discards the second (`idx`, the real
+    receive/change index) since this descriptor has no multipath branch. Every
+    UTXO's address therefore collapsed to whatever the wildcard resolved to
+    (effectively index 0 on chain 0) regardless of its true derivation path —
+    breaking address-per-UTXO uniqueness and any PSBT built from it.
+    """
     # node_path like m/84'/0'/0'/0/5 -> index 5 on external chain
     parts = node_path.split("/")
     idx = int(parts[-1])
     chain = int(parts[-2])
-    return desc.derive(chain, idx).address()
+    return derive_address_for_chain_index(keystore, chain, idx)

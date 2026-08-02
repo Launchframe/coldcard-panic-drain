@@ -29,6 +29,7 @@ from coldcard_panic_drain.plan.mapper import (
     build_assignments,
     compare_assignment_mapping,
     validate_dest_address,
+    validate_source_utxos,
 )
 from coldcard_panic_drain.plan.session import DrainSession, session_path
 from coldcard_panic_drain.psbt.builder import write_psbt_bundle
@@ -214,12 +215,25 @@ def generate(
 
     try:
         session.verify_dest_wallet(dest_wallet)
+        session.verify_source_wallet(source_wallet)
     except ValueError as e:
         typer.echo(f"ERROR: {e}", err=True)
         raise typer.Exit(1) from e
 
     utxos = session.utxo_objects()
     validate_ready_for_generate(utxos)
+
+    source_utxo_errors = validate_source_utxos(source_wallet, utxos)
+    if source_utxo_errors:
+        for err in source_utxo_errors:
+            typer.echo(f"ERROR: {err}", err=True)
+        typer.echo(
+            "Source wallet state changed since plan (spent, swapped, or tampered "
+            "UTXOs). Re-run `plan` — do not generate PSBTs from a stale source snapshot.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
     summary = summarize_skips(utxos)
     if summary.incomplete and not yes:
         require_incomplete_acknowledgment(summary)

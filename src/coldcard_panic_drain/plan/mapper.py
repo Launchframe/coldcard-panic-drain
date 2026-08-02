@@ -5,21 +5,22 @@ from __future__ import annotations
 import random
 from typing import Sequence
 
-from embit.descriptor import Descriptor
-
 from coldcard_panic_drain.sparrow.models import DestinationAssignment, UtxoRecord, WalletSnapshot
-from coldcard_panic_drain.util import path_to_hardened, sanitize_label
-
-
-def _account_descriptor(wallet: WalletSnapshot) -> Descriptor:
-    ks = wallet.keystore
-    account = ks.derivation_path.rstrip("/")
-    desc_str = f"wpkh([{ks.fingerprint}/{path_to_hardened(account)}]{ks.xpub}/0/*)"
-    return Descriptor.from_string(desc_str)
+from coldcard_panic_drain.util import derive_address_for_chain_index, sanitize_label
 
 
 def derive_receive_address(wallet: WalletSnapshot, index: int) -> str:
-    return _account_descriptor(wallet).derive(0, index).address()
+    return derive_address_for_chain_index(wallet.keystore, 0, index)
+
+
+def derive_address_at_path(wallet: WalletSnapshot, derivation_path: str) -> str:
+    """Derive the address a UTXO's own `derivation_path` should have under `wallet`'s xpub."""
+    parts = derivation_path.strip().split("/")
+    if len(parts) < 2:
+        raise ValueError(f"Malformed derivation path: {derivation_path!r}")
+    chain = int(parts[-2])
+    idx = int(parts[-1])
+    return derive_address_for_chain_index(wallet.keystore, chain, idx)
 
 
 def validate_dest_address(wallet: WalletSnapshot, index: int, address: str) -> None:
@@ -30,6 +31,59 @@ def validate_dest_address(wallet: WalletSnapshot, index: int, address: str) -> N
             f"Destination address at index {index} does not match Wallet B xpub "
             f"(session/plan mismatch — aborting to prevent wrong outputs)"
         )
+
+
+def validate_source_utxo(wallet: WalletSnapshot, utxo: UtxoRecord) -> None:
+    """Ensure a session-cached UTXO's address truly derives from Wallet A's own xpub.
+
+    Defense-in-depth against a tampered/forged `labels-session.json`: without this,
+    an attacker (or a corrupted file) could point an arbitrary txid:vout/address at
+    Wallet A and have a PSBT built for it with no cross-check that it actually
+    belongs to Wallet A's keystore.
+    """
+    expected = derive_address_at_path(wallet, utxo.derivation_path)
+    if expected != utxo.address:
+        raise ValueError(
+            f"{utxo.ref}: address does not derive from Wallet A xpub at "
+            f"{utxo.derivation_path} (session/tamper mismatch — aborting to avoid "
+            "building a PSBT for a UTXO not owned by the source wallet)"
+        )
+
+
+def validate_source_utxos(
+    source_wallet: WalletSnapshot, utxos: Sequence[UtxoRecord]
+) -> list[str]:
+    """Cross-check session-cached, in-batch UTXOs against a freshly loaded Wallet A.
+
+    Catches three fund-safety gaps left open by the dest-only checks added in the
+    prior pass: UTXOs already spent since `plan` (missing from the fresh unspent
+    set), UTXOs whose cached value/address drifted (tampered or stale session), and
+    UTXOs whose address does not actually derive from Wallet A's own xpub.
+    """
+    errors: list[str] = []
+    fresh_by_ref = {u.ref: u for u in source_wallet.utxos}
+    for u in utxos:
+        if not u.included or u.frozen:
+            continue
+        fresh = fresh_by_ref.get(u.ref)
+        if fresh is None:
+            errors.append(
+                f"{u.ref}: not found in current Wallet A unspent set "
+                "(already spent, wrong wallet file, or tampered session)"
+            )
+            continue
+        if fresh.value_sats != u.value_sats:
+            errors.append(
+                f"{u.ref}: value changed since plan "
+                f"({u.value_sats} vs {fresh.value_sats} sats)"
+            )
+        if fresh.address != u.address:
+            errors.append(f"{u.ref}: address changed since plan — possible tampered session")
+        try:
+            validate_source_utxo(source_wallet, u)
+        except ValueError as e:
+            errors.append(str(e))
+    return errors
 
 
 def compare_assignment_mapping(
