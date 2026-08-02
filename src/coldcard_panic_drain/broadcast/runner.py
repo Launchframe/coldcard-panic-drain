@@ -22,9 +22,6 @@ FEE_URGENCY_BANNER = (
 )
 
 
-
-
-
 @dataclass
 class BroadcastResult:
     order: int
