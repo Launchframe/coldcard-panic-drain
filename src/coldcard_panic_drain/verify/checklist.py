@@ -1,4 +1,4 @@
-"""Coldcard verification checklist."""
+"""PSBT signing checklist — verify destinations when signing on Wallet A."""
 
 from __future__ import annotations
 
@@ -15,30 +15,32 @@ def write_verification_checklist(
     *,
     ownership_checked_index: int | None = None,
 ) -> None:
-    account = dest_wallet.keystore.derivation_path.rstrip("/")
     lines = [
-        "Coldcard address verification checklist (Wallet B)",
-        f"Account: {account}",
+        "PSBT signing checklist (Wallet A — verify before each signature)",
+        "",
+        "For EACH PSBT in psbts/:",
+        "  1. Load the file on Wallet A Coldcard (Ready to Sign).",
+        "  2. Verify the destination address matches mapping.csv and the entry below.",
+        "  3. In Sparrow Wallet B, confirm the address appears as a receive address.",
+        "  4. Verify amount and fee before approving.",
+        "",
+        "Do NOT sign if the destination does not match Wallet B.",
         "",
     ]
     if ownership_checked_index is not None and ownership_checked_index >= 0:
         lines.extend(
             [
-                f"Ownership verified at plan for receive index {ownership_checked_index} "
-                "(Sparrow Wallet B file matches signing device).",
+                f"Wallet B ownership was verified at plan (receive index "
+                f"{ownership_checked_index}; Sparrow file matches signing device).",
                 "",
             ]
         )
-    lines.extend(
-        [
-            "On Coldcard: Advanced → View Identity → Address → verify each index:",
-            "",
-        ]
-    )
+    lines.append("Reference mapping:")
+    lines.append("")
     for a in assignments:
-        lines.append(f'Index {a.receive_index} | Label: "{a.utxo.label}"')
-        lines.append(f"Address: {a.address}")
-        lines.append(f"Path:    {account}/0/{a.receive_index}")
+        lines.append(f"PSBT: {a.psbt_filename}")
+        lines.append(f'Label: "{a.utxo.label}"')
+        lines.append(f"Wallet B receive index {a.receive_index}: {a.address}")
         lines.append("")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")

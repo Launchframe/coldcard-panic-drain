@@ -43,6 +43,7 @@ from coldcard_panic_drain.sparrow.models import LabelSource
 from coldcard_panic_drain.util import sats_to_btc_str
 from coldcard_panic_drain.verify.checklist import write_verification_checklist
 from coldcard_panic_drain.verify.manifest import verify_signed_psbts
+from coldcard_panic_drain.verify.mapping import confirm_mapping_review
 from coldcard_panic_drain.verify.ownership import confirm_dest_wallet_ownership
 from coldcard_panic_drain.wipe import init_ram_workspace, wipe_workspace
 
@@ -95,28 +96,6 @@ def _print_mapping_table(assignments) -> None:
             f"{a.utxo.label[:24]:<24} {sats_to_btc_str(a.utxo.value_sats):>14}  "
             f"{a.receive_index:>10}  {a.address}"
         )
-
-
-def _confirm_addresses(assignments, *, batch_after: int = 3) -> None:
-    if not assignments:
-        return
-    typer.echo("\nColdcard verification (Wallet B):")
-    typer.echo("Advanced → View Identity → Address — confirm each index matches.\n")
-    for i, a in enumerate(assignments):
-        typer.echo(f'Index {a.receive_index} | Label: "{a.utxo.label}"')
-        typer.echo(f"Address: {a.address}")
-        if i + 1 >= batch_after and i + 1 < len(assignments):
-            typer.echo(
-                f"\n({len(assignments) - i - 1} addresses remain. "
-                "Type CONFIRM to accept all remaining after verification on device.)"
-            )
-            reply = typer.prompt("Type CONFIRM", default="")
-            if reply.strip() != "CONFIRM":
-                raise typer.Exit("Aborted: address verification not confirmed.")
-            return
-        reply = typer.prompt("Type CONFIRM after verifying on Coldcard", default="")
-        if reply.strip() != "CONFIRM":
-            raise typer.Exit("Aborted: address verification not confirmed.")
 
 
 @app.callback()
@@ -176,7 +155,11 @@ def plan(
         raise typer.Exit(1)
 
     _print_mapping_table(assignments)
-    _confirm_addresses(assignments)
+    try:
+        confirm_mapping_review(len(assignments))
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
 
     session = DrainSession.from_wallets(
         source_wallet,
@@ -195,7 +178,7 @@ def plan(
     session.set_assignments(assignments)
     session.dest_ownership_confirmed = True
     session.dest_ownership_checked_index = ownership_index
-    session.addresses_confirmed = True
+    session.mapping_confirmed = True
     session.save(session_path(output))
 
     typer.echo(f"\nSession saved to {session_path(output)}")

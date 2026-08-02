@@ -27,7 +27,7 @@ class DrainSession:
     spread_hours: float
     utxos: list[dict[str, Any]] = field(default_factory=list)
     assignments: list[dict[str, Any]] = field(default_factory=list)
-    addresses_confirmed: bool = False
+    mapping_confirmed: bool = False
     dest_ownership_confirmed: bool = False
     dest_ownership_checked_index: int = -1
     dest_xpub: str = ""
@@ -82,6 +82,9 @@ class DrainSession:
         data.setdefault("quiet_hours_end", None)
         data.setdefault("quiet_hours_timezone", None)
         data.setdefault("calendar_alarm_minutes", 15)
+        if "mapping_confirmed" not in data and "addresses_confirmed" in data:
+            data["mapping_confirmed"] = data["addresses_confirmed"]
+        data.pop("addresses_confirmed", None)
         return cls(**data)
 
     def quiet_hours(self):
@@ -147,10 +150,10 @@ class DrainSession:
                 "Destination wallet ownership was not confirmed during `plan`. "
                 "Re-run `plan` and complete the Wallet B ownership check."
             )
-        if not self.addresses_confirmed:
+        if not self.mapping_confirmed:
             raise ValueError(
-                "Destination addresses were not confirmed during `plan`. "
-                "Re-run `plan` and verify each mapped address on your signing device."
+                "UTXO mapping was not confirmed during `plan`. "
+                "Re-run `plan` and review the mapping table."
             )
 
     def verify_dest_wallet(self, dest: WalletSnapshot) -> None:
