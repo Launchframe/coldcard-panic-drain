@@ -557,7 +557,7 @@ def broadcast_due(
             run_broadcast_follow(
                 output,
                 rpc,
-                max_count=max_count,
+                max_count=1,
                 dry_run=dry_run,
                 skip_failed=skip_failed,
                 broadcast_jitter_minutes=broadcast_jitter_minutes,

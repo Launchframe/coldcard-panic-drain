@@ -109,7 +109,7 @@ Adversarial review passes (Composer → Sonnet → post-mortem) should prioritiz
 | **Source integrity** | UTXOs derive from Wallet A xpub; session UTXOs match fresh Sparrow read; PSBT inputs carry correct `bip32_derivations` (full paths, including Sparrow-relative `m/0/i`). |
 | **Network boundary** | `plan` / `generate` / `verify-manifest` stay socket-free; `broadcast-due` only to loopback / `*.local` with DNS-resolved IP allow-list (no hostname-suffix bypass). |
 | **Incomplete drain** | Skipped/frozen UTXOs stay loud: banner, `SKIPPED-UTXOS.txt`, `I UNDERSTAND` gate. |
-| **Signed PSBT handling** | `psbts_signed/` path containment; dry-run skips signed-dir readiness check; `--follow` is single-shot per wake (`max_count` ignored — warn on stderr). |
+| **Signed PSBT handling** | `psbts_signed/` path containment; dry-run skips signed-dir readiness check; `--follow` is single-shot per wake (`--max-count` ignored — warn on stderr). |
 | **Wallet path guard** | Agents never query real `.mv.db` via shell; tests use `tests/fixtures/` or mocks only. |
 
 ### Broadcast cadence (PR #9 scope)

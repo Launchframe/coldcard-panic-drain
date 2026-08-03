@@ -97,3 +97,23 @@ def test_broadcast_due_follow_default_max_count_no_warning(tmp_path: Path, monke
     )
     assert result.exit_code == 0, result.output
     assert "--max-count is ignored" not in result.stderr
+
+
+def test_broadcast_due_follow_passes_max_count_one_to_runner(tmp_path: Path, monkeypatch):
+    captured: dict = {}
+
+    def fake_follow(*args, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("coldcard_panic_drain.cli.run_broadcast_follow", fake_follow)
+    monkeypatch.setattr(
+        "coldcard_panic_drain.cli.CoreRpcClient",
+        lambda *args, **kwargs: object(),
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["broadcast-due", "-o", str(tmp_path), "--follow", "--max-count", "3"],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured.get("max_count") == 1
