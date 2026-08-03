@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 from typing import Sequence
 
+from coldcard_panic_drain.psbt.fees import jittered_assignment_fees
 from coldcard_panic_drain.sparrow.models import DestinationAssignment, UtxoRecord, WalletSnapshot
 from coldcard_panic_drain.sparrow.receive import next_free_receive_index, used_receive_sets
 from coldcard_panic_drain.util import derive_address_for_chain_index, sanitize_label
@@ -143,8 +144,7 @@ def build_assignments(
                 f"Wallet B receive index {idx} collides with a previously used address. "
                 "Re-sync Wallet B in Sparrow, re-copy the .mv.db, and re-run plan."
             )
-        jitter = rng.uniform(-fee_jitter, fee_jitter)
-        fee_sat_vb = max(1, round(fee_base * (1 + jitter)))
+        fee_sats, fee_sat_vb = jittered_assignment_fees(fee_base, fee_jitter, rng)
         nlocktime = chain_tip + (order + 1) * min_blocks_apart
         base_slug = sanitize_label(utxo.label)
         n = slug_counts.get(base_slug, 0)
@@ -157,6 +157,7 @@ def build_assignments(
                 receive_index=idx,
                 address=address,
                 fee_sat_vb=fee_sat_vb,
+                fee_sats=fee_sats,
                 nlocktime=nlocktime,
                 psbt_filename=psbt_name,
             )

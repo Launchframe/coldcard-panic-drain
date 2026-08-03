@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
+from coldcard_panic_drain.psbt.fees import assignment_fee_sats
 from coldcard_panic_drain.sparrow.models import DestinationAssignment, WalletSnapshot
+from coldcard_panic_drain.util import sats_to_btc_str
 
 
 def write_verification_checklist(
@@ -28,6 +30,7 @@ def write_verification_checklist(
         "",
         "Before signing: copy each .psbt from psbts/ to the ROOT of the microSD card.",
         "Ready to Sign does not scan subdirectories on the card.",
+        "After signing: copy each *-signed.psbt into psbts_signed/ on this output volume.",
         "",
     ]
     if ownership_checked_index is not None and ownership_checked_index >= 0:
@@ -41,8 +44,13 @@ def write_verification_checklist(
     lines.append("Reference mapping:")
     lines.append("")
     for a in assignments:
+        fee_sats = assignment_fee_sats(a)
+        output_sats = a.utxo.value_sats - fee_sats
         lines.append(f"PSBT: {a.psbt_filename}")
         lines.append(f'Label: "{a.utxo.label}"')
+        lines.append(f"Input:  {sats_to_btc_str(a.utxo.value_sats)} BTC")
+        lines.append(f"Fee:    {sats_to_btc_str(fee_sats)} BTC")
+        lines.append(f"Output: {sats_to_btc_str(output_sats)} BTC")
         lines.append(f"Wallet B receive index {a.receive_index}: {a.address}")
         lines.append("")
     path.parent.mkdir(parents=True, exist_ok=True)

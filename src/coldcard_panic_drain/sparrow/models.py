@@ -77,5 +77,6 @@ class DestinationAssignment:
     receive_index: int
     address: str
     fee_sat_vb: int
+    fee_sats: int
     nlocktime: int
     psbt_filename: str = ""

@@ -28,24 +28,33 @@ def prompt_for_labels(
     total = len(unlabeled)
     for i, u in enumerate(unlabeled, start=1):
         received = u.received_at.strftime("%Y-%m-%d") if u.received_at else "unknown"
-        stdout.write(
-            f"\nUnlabeled UTXO {i} of {total}\n"
-            f"  Ref:      {u.ref}\n"
-            f"  Amount:   {sats_to_btc_str(u.value_sats)} BTC ({u.value_sats:,} sats)\n"
-            f"  Received: {received} (block {u.height:,})\n"
-            f"  Address:  {u.address}  ({u.derivation_path})\n\n"
-            f"  Enter label (or 'skip' to exclude from this batch): "
-        )
-        stdout.flush()
-        line = stdin.readline().strip()
-        if line.lower() == "skip":
-            u.included = False
-            u.skip_reason = SkipReason.USER_SKIPPED
-            continue
-        if not line:
-            raise ValueError(f"Empty label for {u.ref}; use 'skip' to exclude.")
-        u.label = line
-        u.label_source = LabelSource.USER_PROMPTED
+        retry = False
+        while True:
+            if retry:
+                stdout.write("  Enter label (or 'skip' to exclude from this batch): ")
+            else:
+                stdout.write(
+                    f"\nUnlabeled UTXO {i} of {total}\n"
+                    f"  Ref:      {u.ref}\n"
+                    f"  Amount:   {sats_to_btc_str(u.value_sats)} BTC ({u.value_sats:,} sats)\n"
+                    f"  Received: {received} (block {u.height:,})\n"
+                    f"  Address:  {u.address}  ({u.derivation_path})\n\n"
+                    f"  Enter label (or 'skip' to exclude from this batch): "
+                )
+            stdout.flush()
+            line = stdin.readline().strip()
+            if line.lower() == "skip":
+                u.included = False
+                u.skip_reason = SkipReason.USER_SKIPPED
+                break
+            if line.lower() in ("exit", "q"):
+                raise ValueError("Aborted: labeling not completed.")
+            if not line:
+                retry = True
+                continue
+            u.label = line
+            u.label_source = LabelSource.USER_PROMPTED
+            break
 
 
 def validate_ready_for_generate(utxos: list[UtxoRecord]) -> None:

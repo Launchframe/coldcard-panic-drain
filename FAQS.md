@@ -24,29 +24,33 @@ These options apply at **`plan`** time. Each included UTXO gets its own single-i
 For each UTXO at `plan` time:
 
 ```
-jitter   = random value between -fee_jitter and +fee_jitter
-rate     = max(1, round(fee_base × (1 + jitter)))
+jitter     = random value between -fee_jitter and +fee_jitter
+fee_sats   = max(140, round(max(1, fee_base) × 140 × (1 + jitter)))
+fee_sat_vb = effective integer sat/vB label for schedule metadata
 ```
+
+The `max(140, …)` floor is **1 sat/vB** on a ~140 vB transaction. When that floor would swallow the lower jitter tail (typical at `fee-base 1`), fees are drawn **uniformly** from the floor to the jittered maximum instead of clustering at 140.
 
 `jitter` is a **fraction**, not sat/vB. Examples:
 
-| `--fee-base` | `--fee-jitter` | Typical per-PSBT rate range |
+| `--fee-base` | `--fee-jitter` | Typical per-PSBT fee range |
 |--------------|----------------|----------------------------|
-| 25 | 0.15 | about 21–29 sat/vB |
-| 50 | 0.10 | about 45–55 sat/vB |
-| 10 | 0.50 | about 5–15 sat/vB |
+| 25 | 0.15 | about 2,975–4,025 sats |
+| 50 | 0.10 | about 6,300–7,700 sats |
+| 1 | 0.12 | about 140–157 sats |
+| 1 | 0.30 | about 140–182 sats (uniform; not piled at 140) |
 
 The exact draw differs per UTXO and is stored in your session.
 
 ### Is `--fee-base 0` valid?
 
-**Accepted by the CLI, but not useful.** The formula clamps every rate to at least **1 sat/vB**:
+**Accepted by the CLI, but not useful.** The formula clamps the base rate to at least **1 sat/vB** before jitter:
 
 ```
-max(1, round(fee_base × (1 + jitter)))
+max(140, round(max(1, fee_base) × 140 × (1 + jitter)))
 ```
 
-So `--fee-base 0` always produces **1 sat/vB** for every PSBT. In a race with an attacker, 1 sat/vB will almost certainly lose.
+So `--fee-base 0` still jitters around **~140 sats** per PSBT (1 sat/vB × 140 vB). In a race with an attacker, that will almost certainly lose.
 
 ### Can I use `--fee-base 0.1`?
 
@@ -54,11 +58,11 @@ So `--fee-base 0` always produces **1 sat/vB** for every PSBT. In a race with an
 
 ### What if `--fee-jitter` is very large (e.g. 0.5 or 1.0)?
 
-Larger jitter widens the spread. With `--fee-base 10` and `--fee-jitter 0.5`, rates range from about **5 to 15 sat/vB**.
+Larger jitter widens the spread. With `--fee-base 10` and `--fee-jitter 0.5`, fees range from about **700 to 2,100 sats**.
 
-**Fees are never negative**, and the **minimum is always 1 sat/vB** thanks to the `max(1, …)` clamp. Even with extreme jitter, you will not get 0 or negative sat/vB rates.
+**Fees are never negative**, and the **minimum is always 1 sat/vB** (~140 sats on a single-input P2WPKH PSBT) thanks to the `max(140, …)` clamp — even with extreme jitter (e.g. `--fee-jitter 1.5`).
 
-Example edge case: `--fee-base 1` with `--fee-jitter 0.99` can mathematically compute `round(0.01)` = 0 before the clamp, but the final rate is still **1 sat/vB**.
+Example edge case: `--fee-base 1` with `--fee-jitter 0.30` spreads fees across **140–182 sats** rather than pinning ~half the UTXOs at exactly 140.
 
 ### When are fees locked in?
 
@@ -66,7 +70,7 @@ At **`plan`**. `generate` reuses the session; changing flags on `generate` does 
 
 ### Where do I see the chosen rate?
 
-- **`plan` mapping table** — shown before you type `PROCEED`
+- **`plan` mapping table** — shown before you type `PROCEED` (use `OPTIONS` to adjust fees or display unit first)
 - **`schedule.yaml`** — `fee_sat_vb` per entry
 - **`mapping.csv`** — audit column
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from embit import script
 from embit.psbt import PSBT
 
+from coldcard_panic_drain.broadcast.paths import signed_psbt_dir, signed_psbt_relpath
 from coldcard_panic_drain.plan.mapper import validate_dest_address
 from coldcard_panic_drain.sparrow.models import KeystoreInfo, WalletSnapshot
 
@@ -44,10 +45,10 @@ def verify_signed_psbts(output_dir: Path) -> list[str]:
             ),
         )
 
-    signed_dir = output_dir / "psbts_signed"
+    signed_dir = signed_psbt_dir(output_dir)
     for entry in manifest:
         unsigned_name = entry["psbt_file"]
-        signed_name = unsigned_name.replace(".psbt", "-signed.psbt")
+        signed_name = Path(signed_psbt_relpath(unsigned_name)).name
         signed_path = signed_dir / signed_name
         if not signed_path.is_file():
             errors.append(f"Missing signed PSBT: {signed_path}")

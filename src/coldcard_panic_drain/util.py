@@ -59,3 +59,21 @@ def sanitize_label(label: str, max_len: int = 40) -> str:
 
 def sats_to_btc_str(sats: int) -> str:
     return f"{sats / 100_000_000:.8f}"
+
+
+def normalize_display_unit(unit: str) -> str:
+    """Normalize CLI display unit to ``btc`` or ``sats``."""
+    normalized = unit.strip().lower()
+    if normalized in ("sats", "sat"):
+        return "sats"
+    if normalized == "btc":
+        return "btc"
+    raise ValueError(f"display must be 'btc' or 'sats', not {unit!r}")
+
+
+def format_amount(sats: int, unit: str) -> str:
+    """Format a satoshi amount for CLI display in sats or BTC."""
+    normalized = normalize_display_unit(unit)
+    if normalized == "sats":
+        return f"{sats:,}"
+    return sats_to_btc_str(sats)

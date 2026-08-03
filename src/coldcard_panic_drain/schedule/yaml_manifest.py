@@ -14,6 +14,7 @@ from coldcard_panic_drain.schedule.quiet_hours import (
     next_allowed_time,
     quiet_hours_to_dict,
 )
+from coldcard_panic_drain.broadcast.paths import signed_psbt_relpath
 from coldcard_panic_drain.sparrow.models import DestinationAssignment
 
 
@@ -58,7 +59,7 @@ def write_schedule(
                 "order": i + 1,
                 "label": a.utxo.label,
                 "unsigned": f"psbts/{a.psbt_filename}",
-                "signed": f"psbts_signed/{a.psbt_filename.replace('.psbt', '-signed.psbt')}",
+                "signed": signed_psbt_relpath(a.psbt_filename),
                 "broadcast_not_before": t.isoformat(),
                 "fee_sat_vb": a.fee_sat_vb,
                 "nlocktime": a.nlocktime,

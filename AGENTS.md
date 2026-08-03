@@ -331,7 +331,7 @@ When launching Task/subagent/MCP workflows:
 Treat as **confidential** on the user’s machine; agents must not read and relay contents:
 
 - `~/.sparrow/wallets/*.mv.db`
-- `--output` directory: `psbts/`, `wallet-*-labels.jsonl`, `mapping.csv`, `schedule.yaml`, `verify/`, `SKIPPED-UTXOS.txt`, `POST-FLOW-CHECKLIST.txt`, `labels-session.json`
+- `--output` directory: `psbts/`, `psbts_signed/`, `wallet-*-labels.jsonl`, `mapping.csv`, `schedule.yaml`, `verify/`, `SKIPPED-UTXOS.txt`, `POST-FLOW-CHECKLIST.txt`, `labels-session.json`
 
 ---
 
