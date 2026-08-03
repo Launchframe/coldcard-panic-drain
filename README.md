@@ -126,6 +126,7 @@ coldcard-panic-drain broadcast-due -o /path/to/batch \
 - Sleeps in chunks of at most 60 seconds; wakes early only when an entry is actually due (or every 60s as a bounded fallback while blocked on signing/quiet hours). No busy loop.
 - **CPU load: negligible.** It is a sleeping process that wakes at most once a minute to check `schedule.yaml`/`broadcast-state.yaml`, with a brief RPC call only on the iteration something actually broadcasts. Typical idle CPU is well under 0.1%; there is no polling loop spinning between wakeups.
 - Stop with `Ctrl-C` (SIGINT) or `SIGTERM` — both are handled gracefully, finishing the current check before exiting.
+- Emits timestamped heartbeats to **stderr** after each check and about every 60 seconds while waiting, so a long-running watcher proves it is alive.
 - Each wake internally calls the same single-shot `run_broadcast_due(max_count=1)` logic a cron entry would use, so behavior (jitter, quiet hours, safety checks) is identical either way.
 
 **Cadence flags** (apply in both `--follow` and single-shot mode):

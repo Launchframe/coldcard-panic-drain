@@ -31,6 +31,35 @@ MAX_SLEEP_CHUNK_SECONDS = 60
 DEFAULT_POLL_INTERVAL = timedelta(seconds=60)
 
 
+def _iso_utc(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat(timespec="seconds")
+
+
+def format_follow_heartbeat(
+    now: datetime,
+    wake: datetime,
+    *,
+    phase: str,
+    detail: str = "",
+) -> str:
+    """Single-line UTC heartbeat for --follow stderr (now/wake as ISO8601)."""
+    parts = [f"{_iso_utc(now)} follow {phase} wake={_iso_utc(wake)}"]
+    if detail:
+        parts.append(detail)
+    return " ".join(parts)
+
+
+def _summarize_check_results(results: list[BroadcastResult]) -> str:
+    if not results:
+        return "no due entries"
+    first = results[0]
+    return f"{first.action} order {first.order}"
+
+
 class ShutdownFlag:
     """Mutable flag toggled by a signal handler (or a test) to stop the loop."""
 
@@ -103,11 +132,19 @@ def _sleep_until(
     now_fn: Callable[[], datetime],
     sleep_fn: Callable[[float], None],
     flag: ShutdownFlag,
+    on_heartbeat: Optional[Callable[[str], None]] = None,
 ) -> None:
     while not flag.requested:
-        remaining = (wake - now_fn()).total_seconds()
+        now = now_fn()
+        remaining = (wake - now).total_seconds()
         if remaining <= 0:
             return
+        if on_heartbeat is not None:
+            on_heartbeat(
+                format_follow_heartbeat(
+                    now, wake, phase="heartbeat", detail="still waiting"
+                )
+            )
         sleep_fn(min(remaining, MAX_SLEEP_CHUNK_SECONDS))
 
 
@@ -121,6 +158,7 @@ def run_broadcast_follow(
     respect_quiet_hours: bool = False,
     rng: Optional[random.Random] = None,
     on_results: Optional[Callable[[list[BroadcastResult]], None]] = None,
+    on_heartbeat: Optional[Callable[[str], None]] = None,
     shutdown_flag: Optional[ShutdownFlag] = None,
     now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -151,8 +189,35 @@ def run_broadcast_follow(
         if on_results is not None:
             on_results(results)
 
+        now = now_fn()
+        if on_heartbeat is not None:
+            on_heartbeat(
+                format_follow_heartbeat(
+                    now,
+                    now,
+                    phase="checked",
+                    detail=_summarize_check_results(results),
+                )
+            )
+
         if flag.requested:
             break
 
-        wake = compute_next_broadcast_wake(output_dir, now_fn())
-        _sleep_until(wake, now_fn=now_fn, sleep_fn=sleep_fn, flag=flag)
+        wake = compute_next_broadcast_wake(output_dir, now)
+        if on_heartbeat is not None:
+            seconds_until = max(0, int((wake - now).total_seconds()))
+            on_heartbeat(
+                format_follow_heartbeat(
+                    now,
+                    wake,
+                    phase="sleeping",
+                    detail=f"{seconds_until}s until wake",
+                )
+            )
+        _sleep_until(
+            wake,
+            now_fn=now_fn,
+            sleep_fn=sleep_fn,
+            flag=flag,
+            on_heartbeat=on_heartbeat,
+        )
