@@ -245,6 +245,17 @@ def test_build_psbt_includes_bip32_derivation():
     assert path.derivation == parse_bip32_path(utxo.derivation_path)
 
 
+def test_build_psbt_expands_sparrow_relative_derivation_path():
+    """Sparrow walletNode paths are relative to the account xpub (m/0/i), not from master."""
+    source, _dest, utxo, assignment = _bundle_fixture()
+    utxo.derivation_path = "m/0/31"
+    assignment.utxo = utxo
+    raw = build_psbt(assignment, source)
+    psbt = PSBT.parse(raw)
+    (path,) = psbt.inputs[0].bip32_derivations.values()
+    assert path.derivation == parse_bip32_path("m/84'/0'/0'/0/31")
+
+
 def test_build_psbt_rejects_utxo_not_owned_by_source_wallet():
     source, _dest, utxo, assignment = _bundle_fixture()
     assignment.utxo.address = assignment.utxo.address[:-4] + "xxxx"

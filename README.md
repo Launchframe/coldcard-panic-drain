@@ -47,6 +47,7 @@ coldcard-panic-drain plan \
 - Skipping a UTXO triggers incomplete-drain warnings.
 - **Required:** confirm Wallet B ownership (Sparrow file matches your signing device).
 - Review the mapping table and type `PROCEED` to save the session (no PSBTs exist yet).
+- **`--fee-base`** (sat/vB, integer) and **`--fee-jitter`** (± fraction) set each PSBT's fee rate at plan time. See [FAQS.md](FAQS.md#fees-fee-base-and-fee-jitter).
 
 ### 3. Generate outputs
 
@@ -120,6 +121,10 @@ Point `--rpc-url` at Core on the same machine (`http://127.0.0.1:8332`) or a LAN
 ## Reuse (Wallet B → Wallet C)
 
 Same commands with `--source` = staging wallet and `--dest` = final wallet.
+
+## FAQ
+
+Common questions (fees, signing errors, broadcast setup): **[FAQS.md](FAQS.md)**
 
 ## Security notes
 

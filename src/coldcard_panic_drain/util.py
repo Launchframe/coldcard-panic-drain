@@ -22,6 +22,14 @@ def parse_bip32_path(derivation_path: str) -> list[int]:
     return ints
 
 
+def full_bip32_path_ints(account_derivation_path: str, node_derivation_path: str) -> list[int]:
+    """Combine account path (m/84'/0'/0') with Sparrow-relative node path (m/0/31)."""
+    node_ints = parse_bip32_path(node_derivation_path)
+    if len(node_ints) >= 5 and (node_ints[0] & 0x7FFFFFFF) == 84:
+        return node_ints
+    return parse_bip32_path(account_derivation_path) + node_ints
+
+
 def derive_address_for_chain_index(keystore, chain: int, index: int) -> str:
     """Derive a bc1q address for an arbitrary (chain, index) pair from a keystore's xpub.
 

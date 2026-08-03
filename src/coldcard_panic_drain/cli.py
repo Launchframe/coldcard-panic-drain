@@ -55,13 +55,26 @@ app = typer.Typer(
     add_completion=False,
 )
 
+FEE_BASE_HELP = (
+    "Target fee rate in sat/vB for each single-UTXO PSBT. Chosen at plan time and "
+    "baked into the transaction — you cannot raise it after signing. Use a "
+    "competitive value if racing an attacker (see FAQS.md). 0 is accepted but "
+    "clamps to 1 sat/vB minimum."
+)
+FEE_JITTER_HELP = (
+    "Random ± fraction applied per UTXO at plan time so each PSBT gets a slightly "
+    "different fee rate: rate = max(1, round(fee_base * (1 + uniform(-jitter, "
+    "+jitter)))). Example: fee-base 25 and fee-jitter 0.15 → about 21–29 sat/vB. "
+    "Fees never go negative; the minimum is always 1 sat/vB."
+)
+
 
 def _common_options(
     source: Path = typer.Option(..., "--source", "-s", help="Wallet A Sparrow .mv.db"),
     dest: Path = typer.Option(..., "--dest", "-d", help="Wallet B Sparrow .mv.db"),
     output: Path = typer.Option(..., "--output", "-o", help="Output directory (e.g. microSD)"),
-    fee_base: int = typer.Option(25, "--fee-base", help="Base fee rate (sat/vB)"),
-    fee_jitter: float = typer.Option(0.15, "--fee-jitter", help="Fee jitter fraction"),
+    fee_base: int = typer.Option(25, "--fee-base", help=FEE_BASE_HELP),
+    fee_jitter: float = typer.Option(0.15, "--fee-jitter", help=FEE_JITTER_HELP),
     min_blocks_apart: int = typer.Option(2, "--min-blocks-apart", help="nLockTime spacing"),
     spread_hours: float = typer.Option(48.0, "--spread-hours", help="Broadcast schedule spread"),
 ) -> dict:
@@ -112,8 +125,8 @@ def plan(
     source: Path = typer.Option(..., "--source", "-s"),
     dest: Path = typer.Option(..., "--dest", "-d"),
     output: Path = typer.Option(..., "--output", "-o"),
-    fee_base: int = typer.Option(25, "--fee-base"),
-    fee_jitter: float = typer.Option(0.15, "--fee-jitter"),
+    fee_base: int = typer.Option(25, "--fee-base", help=FEE_BASE_HELP),
+    fee_jitter: float = typer.Option(0.15, "--fee-jitter", help=FEE_JITTER_HELP),
     min_blocks_apart: int = typer.Option(2, "--min-blocks-apart"),
     spread_hours: float = typer.Option(48.0, "--spread-hours"),
     dnd_start: Optional[str] = typer.Option(None, "--dnd-start", help="Quiet hours start HH:MM"),

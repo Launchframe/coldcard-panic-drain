@@ -11,7 +11,7 @@ from embit.transaction import Transaction, TransactionInput, TransactionOutput
 
 from coldcard_panic_drain.plan.mapper import validate_dest_address, validate_source_utxo
 from coldcard_panic_drain.sparrow.models import DestinationAssignment, WalletSnapshot
-from coldcard_panic_drain.util import parse_bip32_path
+from coldcard_panic_drain.util import full_bip32_path_ints, parse_bip32_path
 
 # P2WPKH vsize estimates (conservative)
 VBYTES_1IN_1OUT = 140
@@ -31,7 +31,7 @@ def _input_bip32_derivation(source_wallet: WalletSnapshot, utxo) -> tuple[object
     matching scriptPubkeys.
     """
     ks = source_wallet.keystore
-    path_ints = parse_bip32_path(utxo.derivation_path)
+    path_ints = full_bip32_path_ints(ks.derivation_path, utxo.derivation_path)
     if len(path_ints) < 2:
         raise ValueError(f"Malformed derivation path for {utxo.ref}: {utxo.derivation_path!r}")
     chain, idx = path_ints[-2], path_ints[-1]
