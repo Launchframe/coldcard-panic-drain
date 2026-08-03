@@ -189,6 +189,10 @@ Common questions (fees, signing errors, broadcast setup): **[FAQS.md](FAQS.md)**
 - The tool never sees seeds; only watch-only wallet databases.
 - RAM workspace is wiped on exit (`wipe` subcommand available).
 
+## Roadmap
+
+Wallet-format expansion is tracked in [docs/issues/](docs/issues/README.md) (Electrum, additional script types, multisig, Nunchuk). File GitHub issues with `./scripts/file-wallet-support-issues.sh`.
+
 ## License
 
 MIT
