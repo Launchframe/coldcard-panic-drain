@@ -9,8 +9,14 @@ from typing import Optional
 import typer
 
 from coldcard_panic_drain.broadcast.core_rpc import CoreRpcClient
+from coldcard_panic_drain.broadcast.follow import run_broadcast_follow
 from coldcard_panic_drain.broadcast.paths import signed_psbt_dir
-from coldcard_panic_drain.broadcast.runner import FEE_URGENCY_BANNER, run_broadcast_due
+from coldcard_panic_drain.broadcast.runner import (
+    DEFAULT_BROADCAST_JITTER_MINUTES,
+    FEE_URGENCY_BANNER,
+    BroadcastResult,
+    run_broadcast_due,
+)
 from coldcard_panic_drain.export.bip329 import write_wallet_a_labels, write_wallet_b_labels
 from coldcard_panic_drain.export.mapping_csv import write_mapping_csv
 from coldcard_panic_drain.export.post_flow import write_post_flow_checklist
@@ -71,6 +77,32 @@ FEE_JITTER_HELP = (
     "from 140 sats up to the jittered maximum instead. "
     "Example: fee-base 25 and fee-jitter 0.15 → about 2,975–4,025 sats per PSBT."
 )
+SCHEDULE_JITTER_HELP = (
+    "Random ± fraction of the per-entry spacing applied to each schedule.yaml "
+    "broadcast_not_before at plan time, so entries don't land on an exact "
+    "fixed cadence (harder to fingerprint as a batch). Entries stay at least "
+    "15 minutes apart and quiet hours are re-applied after jitter."
+)
+BROADCAST_JITTER_HELP = (
+    "Minutes of additional random delay applied at broadcast-due runtime, on "
+    "top of schedule.yaml's broadcast_not_before, once an entry is due and its "
+    "signed PSBT is present. Drawn once per entry and persisted in "
+    "broadcast-state.yaml (re-running broadcast-due does not re-roll it). "
+    "0 disables runtime jitter."
+)
+RESPECT_QUIET_HOURS_HELP = (
+    "Skip broadcasting (leaving the entry pending) while inside the quiet "
+    "hours recorded in schedule.yaml. Off by default: broadcast-due normally "
+    "ignores quiet hours, which only affect calendar reminders and `remind`."
+)
+FOLLOW_HELP = (
+    "Run as a long-lived watcher instead of exiting after one pass: sleeps "
+    "(in <=60s chunks) until the next entry is due, then calls the same "
+    "single-shot broadcast-due logic. Replaces an hourly cron entry — see "
+    "README.md §9. CPU load is negligible: a sleeping process that wakes at "
+    "most once a minute to check schedule.yaml, with a brief RPC call only "
+    "when something actually broadcasts."
+)
 
 
 def _mark_existing_labels(utxos) -> None:
@@ -83,6 +115,11 @@ def _load_pair(source: Path, dest: Path):
     source_wallet = load_wallet(source)
     dest_wallet = load_wallet(dest)
     return source_wallet, dest_wallet
+
+
+def _print_broadcast_results(results: list[BroadcastResult]) -> None:
+    for r in results:
+        typer.echo(f"[{r.action}] order {r.order} {r.label}: {r.txid or r.detail}")
 
 
 def _print_mapping_table(assignments, *, unit: str) -> None:
@@ -117,6 +154,7 @@ def plan(
     fee_jitter: float = typer.Option(0.15, "--fee-jitter", help=FEE_JITTER_HELP),
     min_blocks_apart: int = typer.Option(2, "--min-blocks-apart"),
     spread_hours: float = typer.Option(48.0, "--spread-hours"),
+    schedule_jitter: float = typer.Option(0.35, "--schedule-jitter", help=SCHEDULE_JITTER_HELP),
     dnd_start: Optional[str] = typer.Option(None, "--dnd-start", help="Quiet hours start HH:MM"),
     dnd_end: Optional[str] = typer.Option(None, "--dnd-end", help="Quiet hours end HH:MM"),
     timezone: Optional[str] = typer.Option(None, "--timezone", help="IANA tz for quiet hours"),
@@ -193,6 +231,7 @@ def plan(
         quiet_hours_end=dnd_end,
         quiet_hours_timezone=timezone,
         calendar_alarm_minutes=calendar_alarm_minutes,
+        schedule_jitter=schedule_jitter,
     )
     for u in utxos:
         session.update_utxo(u)
@@ -299,6 +338,7 @@ def generate(
         output / "schedule.yaml",
         assignments,
         spread_hours=float(session.spread_hours),
+        schedule_jitter=session.schedule_jitter,
         quiet_hours=session.quiet_hours(),
     )
     write_ics_calendar(
@@ -383,6 +423,13 @@ def broadcast_due(
     max_count: int = typer.Option(1, "--max-count"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     skip_failed: bool = typer.Option(False, "--skip-failed"),
+    follow: bool = typer.Option(False, "--follow", help=FOLLOW_HELP),
+    broadcast_jitter_minutes: int = typer.Option(
+        DEFAULT_BROADCAST_JITTER_MINUTES, "--broadcast-jitter-minutes", help=BROADCAST_JITTER_HELP
+    ),
+    respect_quiet_hours: bool = typer.Option(
+        False, "--respect-quiet-hours", help=RESPECT_QUIET_HOURS_HELP
+    ),
 ) -> None:
     """Broadcast due signed PSBTs via local Bitcoin Core (localhost or *.local RPC)."""
     typer.echo(FEE_URGENCY_BANNER, err=True)
@@ -397,6 +444,28 @@ def broadcast_due(
     except ValueError as e:
         typer.echo(f"ERROR: {e}", err=True)
         raise typer.Exit(1) from e
+
+    if follow:
+        typer.echo(
+            "Running in --follow mode. Sleeping between checks; press Ctrl-C to stop."
+        )
+        try:
+            run_broadcast_follow(
+                output,
+                rpc,
+                dry_run=dry_run,
+                skip_failed=skip_failed,
+                broadcast_jitter_minutes=broadcast_jitter_minutes,
+                respect_quiet_hours=respect_quiet_hours,
+                on_results=_print_broadcast_results,
+            )
+        except ValueError as e:
+            typer.echo(f"ERROR: {e}", err=True)
+            raise typer.Exit(1) from e
+        except KeyboardInterrupt:
+            typer.echo("\nStopped.")
+        return
+
     try:
         results = run_broadcast_due(
             output,
@@ -404,6 +473,8 @@ def broadcast_due(
             max_count=max_count,
             dry_run=dry_run,
             skip_failed=skip_failed,
+            broadcast_jitter_minutes=broadcast_jitter_minutes,
+            respect_quiet_hours=respect_quiet_hours,
         )
     except ValueError as e:
         typer.echo(f"ERROR: {e}", err=True)
@@ -411,8 +482,7 @@ def broadcast_due(
     if not results:
         typer.echo("No due entries to broadcast.")
         return
-    for r in results:
-        typer.echo(f"[{r.action}] order {r.order} {r.label}: {r.txid or r.detail}")
+    _print_broadcast_results(results)
 
 
 @app.command()
