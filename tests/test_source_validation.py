@@ -249,6 +249,7 @@ def test_build_psbt_expands_sparrow_relative_derivation_path():
     """Sparrow walletNode paths are relative to the account xpub (m/0/i), not from master."""
     source, _dest, utxo, assignment = _bundle_fixture()
     utxo.derivation_path = "m/0/31"
+    utxo.address = derive_address_for_chain_index(source.keystore, 0, 31)
     assignment.utxo = utxo
     raw = build_psbt(assignment, source)
     psbt = PSBT.parse(raw)
