@@ -13,7 +13,9 @@ from coldcard_panic_drain.broadcast.follow import (
     INTERRUPTIBLE_SLEEP_SLICE_SECONDS,
     MAX_SLEEP_CHUNK_SECONDS,
     ShutdownFlag,
+    _sleep_detail_for_wake,
     _sleep_until,
+    _summarize_check_results,
     compute_next_broadcast_wake,
     format_follow_heartbeat,
     run_broadcast_follow,
@@ -213,6 +215,86 @@ def _write_schedule_with_quiet_hours(
             }
         ),
         encoding="utf-8",
+    )
+
+
+def test_summarize_check_results_quiet_hours_skips():
+    results = [
+        BroadcastResult(1, "coin-a", "skipped", detail="quiet hours"),
+        BroadcastResult(2, "coin-b", "skipped", detail="quiet hours"),
+    ]
+    assert _summarize_check_results(results) == "quiet hours — 2 due entries held"
+
+
+def test_sleep_detail_for_wake_acknowledges_quiet_hours(tmp_path: Path):
+    now = datetime(2026, 1, 1, 23, 0, 0, tzinfo=timezone.utc)
+    _write_schedule_with_quiet_hours(
+        tmp_path,
+        [_entry(1, now - timedelta(minutes=5))],
+        start="22:00",
+        end="08:00",
+    )
+    wake = datetime(2026, 1, 2, 8, 0, 0, tzinfo=timezone.utc)
+    detail = _sleep_detail_for_wake(
+        tmp_path,
+        now,
+        wake,
+        respect_quiet_hours=True,
+    )
+    assert "quiet hours until 08:00 (UTC)" in detail
+    assert "sleeping" in detail
+    assert "32400s" in detail
+
+
+def test_sleep_detail_for_wake_generic_when_not_quiet_hours(tmp_path: Path):
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    wake = now + timedelta(minutes=5)
+    detail = _sleep_detail_for_wake(
+        tmp_path,
+        now,
+        wake,
+        respect_quiet_hours=True,
+    )
+    assert detail == "300s until wake"
+
+
+def test_run_broadcast_follow_sleeping_heartbeat_acknowledges_quiet_hours(
+    tmp_path: Path, monkeypatch
+):
+    heartbeats: list[str] = []
+    flag = ShutdownFlag()
+    now = datetime(2026, 1, 1, 23, 0, 0, tzinfo=timezone.utc)
+    _write_schedule_with_quiet_hours(
+        tmp_path,
+        [_entry(1, now - timedelta(minutes=5))],
+        start="22:00",
+        end="08:00",
+    )
+
+    monkeypatch.setattr(
+        "coldcard_panic_drain.broadcast.follow.run_broadcast_due",
+        lambda output_dir, rpc, **kwargs: [
+            BroadcastResult(1, "coin", "skipped", detail="quiet hours")
+        ],
+    )
+
+    def fake_sleep(_seconds: float) -> None:
+        flag.requested = True
+
+    run_broadcast_follow(
+        tmp_path,
+        MagicMock(),
+        respect_quiet_hours=True,
+        shutdown_flag=flag,
+        now_fn=lambda: now,
+        sleep_fn=fake_sleep,
+        on_heartbeat=heartbeats.append,
+    )
+
+    assert any("quiet hours — 1 due entry held" in h for h in heartbeats)
+    assert any(
+        "quiet hours until 08:00 (UTC)" in h and " follow sleeping " in h
+        for h in heartbeats
     )
 
 

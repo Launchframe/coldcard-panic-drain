@@ -27,7 +27,11 @@ from coldcard_panic_drain.broadcast.runner import (
 )
 from coldcard_panic_drain.broadcast.state import BroadcastState, state_path
 from coldcard_panic_drain.schedule.load import load_schedule, schedule_quiet_hours
-from coldcard_panic_drain.schedule.quiet_hours import in_quiet_hours, next_allowed_time
+from coldcard_panic_drain.schedule.quiet_hours import (
+    in_quiet_hours,
+    next_allowed_time,
+    quiet_hours_end_display,
+)
 
 MAX_SLEEP_CHUNK_SECONDS = 60
 INTERRUPTIBLE_SLEEP_SLICE_SECONDS = 1.0  # max latency from SIGINT to exit loop
@@ -59,8 +63,48 @@ def format_follow_heartbeat(
 def _summarize_check_results(results: list[BroadcastResult]) -> str:
     if not results:
         return "no due entries"
+    quiet_skips = [
+        r
+        for r in results
+        if r.action == "skipped" and r.detail == "quiet hours"
+    ]
+    if quiet_skips and len(quiet_skips) == len(results):
+        n = len(quiet_skips)
+        word = "entry" if n == 1 else "entries"
+        return f"quiet hours — {n} due {word} held"
     first = results[0]
     return f"{first.action} order {first.order}"
+
+
+def _sleep_detail_for_wake(
+    output_dir: Path,
+    now: datetime,
+    wake: datetime,
+    *,
+    respect_quiet_hours: bool,
+) -> str:
+    seconds_until = max(0, int((wake - now).total_seconds()))
+    if not respect_quiet_hours:
+        return f"{seconds_until}s until wake"
+
+    sched_path = output_dir / "schedule.yaml"
+    if not sched_path.is_file():
+        return f"{seconds_until}s until wake"
+
+    doc = load_schedule(sched_path)
+    quiet_hours = schedule_quiet_hours(doc)
+    if quiet_hours is None or not in_quiet_hours(now, quiet_hours):
+        return f"{seconds_until}s until wake"
+
+    quiet_end = next_allowed_time(now, quiet_hours)
+    if abs((wake - quiet_end).total_seconds()) > 1:
+        return f"{seconds_until}s until wake"
+
+    end_display = quiet_hours_end_display(now, quiet_hours)
+    return (
+        f"quiet hours until {end_display} ({quiet_hours.timezone}) "
+        f"— sleeping {seconds_until}s until wake"
+    )
 
 
 class ShutdownFlag:
@@ -242,13 +286,17 @@ def run_broadcast_follow(
             output_dir, now, respect_quiet_hours=respect_quiet_hours
         )
         if on_heartbeat is not None:
-            seconds_until = max(0, int((wake - now).total_seconds()))
             on_heartbeat(
                 format_follow_heartbeat(
                     now,
                     wake,
                     phase="sleeping",
-                    detail=f"{seconds_until}s until wake",
+                    detail=_sleep_detail_for_wake(
+                        output_dir,
+                        now,
+                        wake,
+                        respect_quiet_hours=respect_quiet_hours,
+                    ),
                 )
             )
         _sleep_until(
