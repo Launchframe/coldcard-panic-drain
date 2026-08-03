@@ -11,6 +11,7 @@ from embit.finalizer import finalize_psbt
 from embit.psbt import PSBT
 
 from coldcard_panic_drain.broadcast.core_rpc import CoreRpcClient, CoreRpcError
+from coldcard_panic_drain.broadcast.paths import signed_path_under_output
 from coldcard_panic_drain.broadcast.state import BroadcastState, state_path
 from coldcard_panic_drain.schedule.load import load_schedule
 
@@ -80,7 +81,13 @@ def run_broadcast_due(
             continue
 
         signed_rel = entry.get("signed", "")
-        signed_path = output_dir / signed_rel
+        try:
+            signed_path = signed_path_under_output(output_dir, signed_rel)
+        except ValueError as e:
+            results.append(
+                BroadcastResult(order, label, "skipped", detail=str(e))
+            )
+            continue
         if not signed_path.is_file():
             results.append(
                 BroadcastResult(order, label, "skipped", detail="signed PSBT missing")
