@@ -4,10 +4,10 @@ Specs for GitHub issues tracking wallet-format expansion beyond Sparrow BIP84 `.
 
 | # | Spec file | GitHub issue |
 |---|-----------|--------------|
-| 1 | [electrum-wallet-import.md](electrum-wallet-import.md) | _(file after `scripts/file-wallet-support-issues.sh`)_ |
-| 2 | [additional-script-types.md](additional-script-types.md) | _(file after script)_ |
-| 3 | [multisig-miniscript.md](multisig-miniscript.md) | _(file after script)_ |
-| 4 | [nunchuk-wallet-import.md](nunchuk-wallet-import.md) | _(file after script)_ |
+| 1 | [electrum-wallet-import.md](electrum-wallet-import.md) | [#12](https://github.com/Launchframe/coldcard-panic-drain/issues/12) |
+| 2 | [additional-script-types.md](additional-script-types.md) | [#13](https://github.com/Launchframe/coldcard-panic-drain/issues/13) |
+| 3 | [multisig-miniscript.md](multisig-miniscript.md) | [#14](https://github.com/Launchframe/coldcard-panic-drain/issues/14) |
+| 4 | [nunchuk-wallet-import.md](nunchuk-wallet-import.md) | [#15](https://github.com/Launchframe/coldcard-panic-drain/issues/15) |
 
 ## Filing issues
 
