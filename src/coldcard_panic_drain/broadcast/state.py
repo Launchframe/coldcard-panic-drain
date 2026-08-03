@@ -26,28 +26,52 @@ class BroadcastState:
         return cls(entries=entries)
 
     def get(self, order: int) -> dict[str, Any]:
-        return self.entries.get(order, {"order": order, "status": "pending"})
+        return self.entries.get(order, {"order": order, "status": "pending", "ready_at": None})
 
     def is_broadcast(self, order: int) -> bool:
         return self.get(order).get("status") == "broadcast"
 
     def mark_broadcast(self, order: int, txid: str) -> None:
+        ready_at = self.entries.get(order, {}).get("ready_at")
         self.entries[order] = {
             "order": order,
             "status": "broadcast",
             "txid": txid,
             "broadcast_at": datetime.now(timezone.utc).isoformat(),
             "error": None,
+            "ready_at": ready_at,
         }
 
     def mark_failed(self, order: int, error: str) -> None:
+        ready_at = self.entries.get(order, {}).get("ready_at")
         self.entries[order] = {
             "order": order,
             "status": "failed",
             "txid": None,
             "broadcast_at": None,
             "error": error,
+            "ready_at": ready_at,
         }
+
+    def set_ready_at(self, order: int, ready_at: datetime) -> None:
+        """Persist the jittered broadcast time drawn for `order` (runtime jitter).
+
+        Preserves any existing status fields so a jitter draw made while an
+        entry is still pending doesn't clobber later broadcast/failed bookkeeping.
+        """
+        entry = dict(self.get(order))
+        entry["order"] = order
+        entry["ready_at"] = ready_at.isoformat()
+        self.entries[order] = entry
+
+    def get_ready_at(self, order: int) -> Optional[datetime]:
+        raw = self.entries.get(order, {}).get("ready_at")
+        if not raw:
+            return None
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
 
     def save_atomic(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
