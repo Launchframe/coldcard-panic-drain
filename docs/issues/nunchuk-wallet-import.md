@@ -92,6 +92,6 @@ Score **BSMS vs Descriptor** (and Coldcard file export if available):
 
 ## Related
 
-- #TBD Electrum wallet import
-- #TBD Additional script types
-- #TBD Multisig / miniscript
+- #12 Electrum wallet import
+- #13 Additional script types
+- #14 Multisig / miniscript

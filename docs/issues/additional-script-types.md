@@ -48,5 +48,6 @@ Extend wallet read, PSBT build, fee estimation, and address validation to suppor
 
 ## Related
 
-- Electrum / Nunchuk import issues (must declare supported script types per format)
-- Multisig / miniscript
+- #12 Electrum wallet import
+- #15 Nunchuk wallet import
+- #14 Multisig / miniscript

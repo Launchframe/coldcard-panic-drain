@@ -57,6 +57,6 @@ Electrum wallet formats vary by version and wallet type. Before implementation, 
 
 ## Related
 
-- Nunchuk wallet import (BSMS / Descriptor)
-- Additional script types (BIP49 P2SH-wrapped segwit in Electrum)
-- Multisig / miniscript
+- #15 Nunchuk wallet import (BSMS / Descriptor)
+- #13 Additional script types
+- #14 Multisig / miniscript

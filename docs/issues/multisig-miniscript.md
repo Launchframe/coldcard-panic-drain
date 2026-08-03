@@ -51,6 +51,6 @@ WalletSnapshot
 
 ## Related
 
-- Nunchuk BSMS/Descriptor import (multisig markers in exports)
-- Electrum multisig JSON
-- Additional script types (P2WSH singlesig vs multisig distinction)
+- #15 Nunchuk BSMS/Descriptor import (multisig markers in exports)
+- #12 Electrum multisig JSON
+- #13 Additional script types (P2WSH singlesig vs multisig distinction)
