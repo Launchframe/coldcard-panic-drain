@@ -320,6 +320,7 @@ When launching Task/subagent/MCP workflows:
 | `generate` | PSBTs, BIP-329 exports, `schedule.yaml`, `reminders.ics`, checklists |
 | `verify-manifest` | Validate signed PSBTs in `psbts_signed/` |
 | `export-calendar` | Regenerate `reminders.ics` from `schedule.yaml` |
+| `reschedule` | Retime unbroadcast `schedule.yaml` entries only — no re-plan, no re-sign |
 | `broadcast-due` | Cron: broadcast due signed PSBTs via localhost Core RPC |
 | `remind` | Next manual broadcast hint (respects quiet hours) |
 | `wipe` | Clear RAM workspace |
