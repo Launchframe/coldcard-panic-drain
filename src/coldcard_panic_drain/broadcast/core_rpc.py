@@ -62,7 +62,7 @@ class CoreRpcClient:
                 body = json.loads(resp.read().decode())
         except NetworkBlockedError as e:
             raise CoreRpcError(
-                "RPC blocked by zero-network guard (unexpected for loopback). "
+                "RPC blocked by localhost network guard (unexpected for loopback/*.local). "
                 "Disable proxy env vars or report a bug."
             ) from e
         except urllib.error.HTTPError as e:

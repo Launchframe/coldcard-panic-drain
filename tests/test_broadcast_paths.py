@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from coldcard_panic_drain.broadcast.paths import signed_path_under_output
+from coldcard_panic_drain.broadcast.paths import (
+    ensure_signed_psbt_dir_ready,
+    signed_path_under_output,
+    signed_psbt_relpath,
+)
 
 
 def test_accepts_simple_relative_path(tmp_path: Path):
@@ -16,6 +20,28 @@ def test_accepts_simple_relative_path(tmp_path: Path):
 def test_accepts_nested_relative_path(tmp_path: Path):
     resolved = signed_path_under_output(tmp_path, "psbts_signed/coin-1.psbt")
     assert resolved == (tmp_path / "psbts_signed" / "coin-1.psbt").resolve()
+
+
+def test_signed_psbt_relpath():
+    assert signed_psbt_relpath("001-coin.psbt") == "psbts_signed/001-coin-signed.psbt"
+
+
+def test_ensure_signed_psbt_dir_ready_missing(tmp_path: Path):
+    with pytest.raises(ValueError, match="Missing psbts_signed/"):
+        ensure_signed_psbt_dir_ready(tmp_path)
+
+
+def test_ensure_signed_psbt_dir_ready_empty(tmp_path: Path):
+    (tmp_path / "psbts_signed").mkdir()
+    with pytest.raises(ValueError, match="contains no .psbt files"):
+        ensure_signed_psbt_dir_ready(tmp_path)
+
+
+def test_ensure_signed_psbt_dir_ready_ok(tmp_path: Path):
+    signed_dir = tmp_path / "psbts_signed"
+    signed_dir.mkdir()
+    (signed_dir / "001-coin-signed.psbt").write_bytes(b"psbt")
+    assert ensure_signed_psbt_dir_ready(tmp_path) == signed_dir
 
 
 def test_rejects_empty_path(tmp_path: Path):

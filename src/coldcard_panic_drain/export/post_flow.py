@@ -46,7 +46,7 @@ def write_post_flow_checklist(path: Path, skip_summary: SkipSummary) -> None:
             "Do not leave PSBTs in a subfolder on the card — Coldcard Ready to Sign only lists the card root.",
             "Before EACH signature: verify destination address on device and in Sparrow Wallet B.",
             "See verify/coldcard-checklist.txt for the per-PSBT reference mapping.",
-            "Signed: place files in psbts_signed/ → follow schedule.yaml.",
+            "Signed: place *-signed.psbt files in psbts_signed/ → follow schedule.yaml.",
             "",
             "Manual broadcast: open signed PSBT in Sparrow.",
             "Auto broadcast: broadcast-due (local Bitcoin Core on localhost or *.local).",

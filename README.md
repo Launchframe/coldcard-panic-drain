@@ -47,6 +47,9 @@ coldcard-panic-drain plan \
 - Skipping a UTXO triggers incomplete-drain warnings.
 - **Required:** confirm Wallet B ownership (Sparrow file matches your signing device).
 - Review the mapping table and type `PROCEED` to save the session (no PSBTs exist yet).
+- Type `OPTIONS` at the same prompt to change fees, display unit (`btc`/`sats`), or redraw the table before confirming.
+- **`--display`** (`btc` or `sats`, default `btc`) sets amount units in the mapping table; override interactively via `OPTIONS`.
+- **`--fee-base`** (sat/vB, integer) and **`--fee-jitter`** (± fraction) set each PSBT's fee rate at plan time. See [FAQS.md](FAQS.md#fees-fee-base-and-fee-jitter).
 
 ### 3. Generate outputs
 
@@ -61,6 +64,7 @@ If any UTXOs were excluded, you must type `I UNDERSTAND` to proceed.
 | File | Purpose |
 |------|---------|
 | `psbts/*.psbt` | Unsigned single-UTXO PSBTs for Coldcard |
+| `psbts_signed/` | Place Coldcard `*-signed.psbt` files here (created empty at `generate`) |
 | `wallet-a-labels.jsonl` | Re-import labels into Wallet A after drain |
 | `wallet-b-labels.jsonl` | Import into Wallet B before broadcast |
 | `mapping.csv` | Human audit trail |
@@ -74,7 +78,7 @@ If any UTXOs were excluded, you must type `I UNDERSTAND` to proceed.
 1. Copy each file from `psbts/` to the **root** of the microSD card (not a subfolder).
 2. Coldcard → **Ready to Sign** — it only lists `.psbt` files in the card root directory.
 3. For **each** PSBT, verify the destination address on the device and in Sparrow Wallet B before signing.
-4. Copy `*-signed.psbt` to `psbts_signed/` on the output volume.
+4. Copy each `*-signed.psbt` into `psbts_signed/` on the output volume.
 
 ### 5. Verify signed PSBTs
 
@@ -120,6 +124,10 @@ Point `--rpc-url` at Core on the same machine (`http://127.0.0.1:8332`) or a LAN
 ## Reuse (Wallet B → Wallet C)
 
 Same commands with `--source` = staging wallet and `--dest` = final wallet.
+
+## FAQ
+
+Common questions (fees, signing errors, broadcast setup): **[FAQS.md](FAQS.md)**
 
 ## Security notes
 

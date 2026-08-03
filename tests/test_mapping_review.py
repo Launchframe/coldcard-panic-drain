@@ -18,8 +18,15 @@ def test_confirm_mapping_review_accepts_proceed():
     assert "Wallet A" in stdout.getvalue()
 
 
-def test_confirm_mapping_review_rejects_wrong_ack():
-    stdin = io.StringIO("CONFIRM\n")
+def test_confirm_mapping_review_retries_on_typo():
+    stdin = io.StringIO("o\n" + MAPPING_ACK + "\n")
+    stdout = io.StringIO()
+    confirm_mapping_review(1, stdin=stdin, stdout=stdout)
+    assert "Not recognized" in stdout.getvalue()
+
+
+def test_confirm_mapping_review_exits_on_q():
+    stdin = io.StringIO("q\n")
     stdout = io.StringIO()
     with pytest.raises(ValueError, match="mapping not confirmed"):
         confirm_mapping_review(1, stdin=stdin, stdout=stdout)

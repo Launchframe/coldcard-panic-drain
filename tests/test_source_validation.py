@@ -31,7 +31,10 @@ from coldcard_panic_drain.plan.mapper import (
 from coldcard_panic_drain.plan.session import DrainSession, session_path
 from coldcard_panic_drain.psbt.builder import build_psbt, write_psbt_bundle
 from coldcard_panic_drain.sparrow.models import UtxoRecord
-from coldcard_panic_drain.util import derive_address_for_chain_index, parse_bip32_path
+from coldcard_panic_drain.util import (
+    derive_address_for_chain_index,
+    parse_bip32_path,
+)
 
 from conftest import TEST_FP, TEST_XPUB, make_test_wallet, make_test_wallet_b
 
@@ -243,6 +246,18 @@ def test_build_psbt_includes_bip32_derivation():
     (path,) = derivations.values()
     assert path.fingerprint == bytes.fromhex(source.keystore.fingerprint)
     assert path.derivation == parse_bip32_path(utxo.derivation_path)
+
+
+def test_build_psbt_expands_sparrow_relative_derivation_path():
+    """Sparrow walletNode paths are relative to the account xpub (m/0/i), not from master."""
+    source, _dest, utxo, assignment = _bundle_fixture()
+    utxo.derivation_path = "m/0/31"
+    utxo.address = derive_address_for_chain_index(source.keystore, 0, 31)
+    assignment.utxo = utxo
+    raw = build_psbt(assignment, source)
+    psbt = PSBT.parse(raw)
+    (path,) = psbt.inputs[0].bip32_derivations.values()
+    assert path.derivation == parse_bip32_path("m/84'/0'/0'/0/31")
 
 
 def test_build_psbt_rejects_utxo_not_owned_by_source_wallet():

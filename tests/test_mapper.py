@@ -114,5 +114,6 @@ def test_build_assignments_fee_jitter():
     assert len(assignments) == 1
     a = assignments[0]
     assert a.fee_sat_vb >= 18
+    assert a.fee_sats >= a.fee_sat_vb * 140 - 139
     assert a.nlocktime == 900_003
     assert a.psbt_filename.endswith(".psbt")

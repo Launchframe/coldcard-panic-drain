@@ -11,7 +11,7 @@ from embit.finalizer import finalize_psbt
 from embit.psbt import PSBT
 
 from coldcard_panic_drain.broadcast.core_rpc import CoreRpcClient, CoreRpcError
-from coldcard_panic_drain.broadcast.paths import signed_path_under_output
+from coldcard_panic_drain.broadcast.paths import ensure_signed_psbt_dir_ready, signed_path_under_output
 from coldcard_panic_drain.broadcast.state import BroadcastState, state_path
 from coldcard_panic_drain.schedule.load import load_schedule
 
@@ -58,6 +58,8 @@ def run_broadcast_due(
 ) -> list[BroadcastResult]:
     sched_path = output_dir / "schedule.yaml"
     doc = load_schedule(sched_path)
+    if not dry_run:
+        ensure_signed_psbt_dir_ready(output_dir)
     now = datetime.now(timezone.utc)
     state = BroadcastState.load(state_path(output_dir))
     results: list[BroadcastResult] = []

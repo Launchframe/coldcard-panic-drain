@@ -52,6 +52,7 @@ def test_compare_assignment_mapping_detects_index_drift():
         receive_index=a1.receive_index + 1,
         address=derive_receive_address(dest, a1.receive_index + 1),
         fee_sat_vb=a1.fee_sat_vb,
+        fee_sats=a1.fee_sats,
         nlocktime=a1.nlocktime,
         psbt_filename=a1.psbt_filename,
     )
@@ -76,6 +77,7 @@ def test_compare_assignment_mapping_ignores_fee_jitter():
         receive_index=base.receive_index,
         address=base.address,
         fee_sat_vb=base.fee_sat_vb + 5,
+        fee_sats=base.fee_sats + 700,
         nlocktime=base.nlocktime,
         psbt_filename=base.psbt_filename,
     )
@@ -93,6 +95,7 @@ def test_compare_assignment_mapping_detects_address_drift():
         receive_index=a1.receive_index,
         address=a1.address[:-4] + "xxxx",
         fee_sat_vb=a1.fee_sat_vb,
+        fee_sats=a1.fee_sats,
         nlocktime=a1.nlocktime,
         psbt_filename=a1.psbt_filename,
     )
@@ -142,6 +145,7 @@ def test_write_psbt_bundle_rejects_tampered_address(tmp_path):
         receive_index=good.receive_index,
         address=good.address[:-4] + "xxxx",
         fee_sat_vb=good.fee_sat_vb,
+        fee_sats=good.fee_sats,
         nlocktime=good.nlocktime,
         psbt_filename=good.psbt_filename,
     )

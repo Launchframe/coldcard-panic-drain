@@ -9,12 +9,10 @@ from embit import bip32, script
 from embit.psbt import PSBT, DerivationPath
 from embit.transaction import Transaction, TransactionInput, TransactionOutput
 
+from coldcard_panic_drain.psbt.fees import assignment_fee_sats
 from coldcard_panic_drain.plan.mapper import validate_dest_address, validate_source_utxo
 from coldcard_panic_drain.sparrow.models import DestinationAssignment, WalletSnapshot
-from coldcard_panic_drain.util import parse_bip32_path
-
-# P2WPKH vsize estimates (conservative)
-VBYTES_1IN_1OUT = 140
+from coldcard_panic_drain.util import full_bip32_path_ints
 
 
 def _txid_bytes_le(txid_hex: str) -> bytes:
@@ -31,7 +29,7 @@ def _input_bip32_derivation(source_wallet: WalletSnapshot, utxo) -> tuple[object
     matching scriptPubkeys.
     """
     ks = source_wallet.keystore
-    path_ints = parse_bip32_path(utxo.derivation_path)
+    path_ints = full_bip32_path_ints(ks.derivation_path, utxo.derivation_path)
     if len(path_ints) < 2:
         raise ValueError(f"Malformed derivation path for {utxo.ref}: {utxo.derivation_path!r}")
     chain, idx = path_ints[-2], path_ints[-1]
@@ -54,7 +52,7 @@ def build_psbt(
     # only validated the destination side.
     validate_source_utxo(source_wallet, utxo)
 
-    fee_sats = max(1, VBYTES_1IN_1OUT * assignment.fee_sat_vb)
+    fee_sats = assignment_fee_sats(assignment)
     if fee_sats >= utxo.value_sats:
         raise ValueError(
             f"Fee {fee_sats} sats >= UTXO value {utxo.value_sats} for {utxo.ref}"

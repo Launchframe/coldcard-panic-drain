@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from coldcard_panic_drain.psbt.fees import estimate_psbt_fee_sats
 from coldcard_panic_drain.sparrow.models import (
     DestinationAssignment,
     LabelSource,
@@ -135,6 +136,7 @@ class DrainSession:
                 "receive_index": a.receive_index,
                 "address": a.address,
                 "fee_sat_vb": a.fee_sat_vb,
+                "fee_sats": a.fee_sats,
                 "nlocktime": a.nlocktime,
                 "psbt_filename": a.psbt_filename,
                 "label": a.utxo.label,
@@ -209,12 +211,14 @@ class DrainSession:
                 raise ValueError(
                     f"Session assignment references unknown UTXO {d['utxo_ref']}"
                 )
+            fee_sat_vb = d["fee_sat_vb"]
             out.append(
                 DestinationAssignment(
                     utxo=u,
                     receive_index=d["receive_index"],
                     address=d["address"],
-                    fee_sat_vb=d["fee_sat_vb"],
+                    fee_sat_vb=fee_sat_vb,
+                    fee_sats=d.get("fee_sats", estimate_psbt_fee_sats(fee_sat_vb)),
                     nlocktime=d["nlocktime"],
                     psbt_filename=d["psbt_filename"],
                 )

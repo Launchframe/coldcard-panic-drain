@@ -19,9 +19,28 @@ def test_confirm_dest_wallet_ownership_accepts_exact_ack():
     assert "Next receive index: 2" in stdout.getvalue()
 
 
-def test_confirm_dest_wallet_ownership_rejects_wrong_ack():
+def test_confirm_dest_wallet_ownership_retries_on_typo():
     dest = make_test_wallet_b()
-    stdin = io.StringIO("CONFIRM\n")
+    stdin = io.StringIO("OWNERSHIP CONFIRMD\n" + OWNERSHIP_ACK + "\n")
+    stdout = io.StringIO()
+    index = confirm_dest_wallet_ownership(dest, stdin=stdin, stdout=stdout)
+    assert index == 0
+    out = stdout.getvalue()
+    assert "Not recognized" in out
+    assert out.count("Wallet B ownership check") == 1
+
+
+def test_confirm_dest_wallet_ownership_exits_on_q():
+    dest = make_test_wallet_b()
+    stdin = io.StringIO("q\n")
+    stdout = io.StringIO()
+    with pytest.raises(ValueError, match="ownership not confirmed"):
+        confirm_dest_wallet_ownership(dest, stdin=stdin, stdout=stdout)
+
+
+def test_confirm_dest_wallet_ownership_exits_on_exit_case_insensitive():
+    dest = make_test_wallet_b()
+    stdin = io.StringIO("EXIT\n")
     stdout = io.StringIO()
     with pytest.raises(ValueError, match="ownership not confirmed"):
         confirm_dest_wallet_ownership(dest, stdin=stdin, stdout=stdout)
@@ -36,6 +55,7 @@ def test_confirm_dest_wallet_ownership_shows_wallet_identity():
     assert "staging-wallet" in out
     assert dest.keystore.fingerprint in out
     assert "Wallet B ownership check" in out
+    assert "exit/q to abort" in out
 
 
 def test_require_plan_gates_rejects_missing_ownership():

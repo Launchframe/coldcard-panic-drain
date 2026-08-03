@@ -38,3 +38,8 @@ def test_checklist_includes_signing_instructions(tmp_path: Path):
     assert "mapping.csv" in text
     assert "Wallet B ownership was verified at plan" in text
     assert assignments[0].psbt_filename in text
+    fee_sats = assignments[0].fee_sats
+    output_sats = utxo.value_sats - fee_sats
+    assert f"Input:  {utxo.value_sats / 100_000_000:.8f} BTC" in text
+    assert f"Fee:    {fee_sats / 100_000_000:.8f} BTC" in text
+    assert f"Output: {output_sats / 100_000_000:.8f} BTC" in text

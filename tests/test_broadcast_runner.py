@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
+import pytest
+
 from coldcard_panic_drain.broadcast.runner import _signed_tx_hex, run_broadcast_due
 
 
@@ -38,8 +40,36 @@ def _write_schedule(tmp_path: Path, signed_rel: str) -> None:
     (tmp_path / "schedule.yaml").write_text(yaml.safe_dump(doc), encoding="utf-8")
 
 
+def _seed_signed_dir(tmp_path: Path) -> None:
+    signed_dir = tmp_path / "psbts_signed"
+    signed_dir.mkdir()
+    (signed_dir / "placeholder-signed.psbt").write_bytes(b"psbt")
+
+
+def test_run_broadcast_due_requires_psbts_signed_dir(tmp_path: Path):
+    _write_schedule(tmp_path, "psbts_signed/coin-signed.psbt")
+    with pytest.raises(ValueError, match="Missing psbts_signed/"):
+        run_broadcast_due(tmp_path, MagicMock(), max_count=1)
+
+
+def test_run_broadcast_due_requires_nonempty_psbts_signed_dir(tmp_path: Path):
+    _write_schedule(tmp_path, "psbts_signed/coin-signed.psbt")
+    (tmp_path / "psbts_signed").mkdir()
+    with pytest.raises(ValueError, match="contains no .psbt files"):
+        run_broadcast_due(tmp_path, MagicMock(), max_count=1)
+
+
+def test_run_broadcast_due_dry_run_skips_signed_dir_check(tmp_path: Path):
+    _write_schedule(tmp_path, "psbts_signed/coin-signed.psbt")
+    results = run_broadcast_due(tmp_path, MagicMock(), max_count=1, dry_run=True)
+    assert len(results) == 1
+    assert results[0].action == "skipped"
+    assert "missing" in results[0].detail
+
+
 def test_rejects_signed_path_outside_output_dir(tmp_path: Path):
     _write_schedule(tmp_path, "../../../etc/passwd")
+    _seed_signed_dir(tmp_path)
     rpc = MagicMock()
     results = run_broadcast_due(tmp_path, rpc, max_count=1)
     assert len(results) == 1
@@ -50,6 +80,7 @@ def test_rejects_signed_path_outside_output_dir(tmp_path: Path):
 
 def test_rejects_absolute_signed_path(tmp_path: Path):
     _write_schedule(tmp_path, "/tmp/evil-signed.psbt")
+    _seed_signed_dir(tmp_path)
     rpc = MagicMock()
     results = run_broadcast_due(tmp_path, rpc, max_count=1)
     assert results[0].action == "skipped"

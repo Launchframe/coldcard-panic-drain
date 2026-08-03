@@ -22,6 +22,14 @@ def parse_bip32_path(derivation_path: str) -> list[int]:
     return ints
 
 
+def full_bip32_path_ints(account_derivation_path: str, node_derivation_path: str) -> list[int]:
+    """Combine account path (m/84'/0'/0') with Sparrow-relative node path (m/0/31)."""
+    node_ints = parse_bip32_path(node_derivation_path)
+    if len(node_ints) >= 5 and (node_ints[0] & 0x7FFFFFFF) == 84:
+        return node_ints
+    return parse_bip32_path(account_derivation_path) + node_ints
+
+
 def derive_address_for_chain_index(keystore, chain: int, index: int) -> str:
     """Derive a bc1q address for an arbitrary (chain, index) pair from a keystore's xpub.
 
@@ -51,3 +59,21 @@ def sanitize_label(label: str, max_len: int = 40) -> str:
 
 def sats_to_btc_str(sats: int) -> str:
     return f"{sats / 100_000_000:.8f}"
+
+
+def normalize_display_unit(unit: str) -> str:
+    """Normalize CLI display unit to ``btc`` or ``sats``."""
+    normalized = unit.strip().lower()
+    if normalized in ("sats", "sat"):
+        return "sats"
+    if normalized == "btc":
+        return "btc"
+    raise ValueError(f"display must be 'btc' or 'sats', not {unit!r}")
+
+
+def format_amount(sats: int, unit: str) -> str:
+    """Format a satoshi amount for CLI display in sats or BTC."""
+    normalized = normalize_display_unit(unit)
+    if normalized == "sats":
+        return f"{sats:,}"
+    return sats_to_btc_str(sats)
