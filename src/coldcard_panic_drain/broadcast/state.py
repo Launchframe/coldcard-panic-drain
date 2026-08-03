@@ -64,6 +64,22 @@ class BroadcastState:
         entry["ready_at"] = ready_at.isoformat()
         self.entries[order] = entry
 
+    def clear_ready_at(self, order: int) -> None:
+        """Drop a previously-persisted runtime jitter draw for `order` (e.g. on reschedule).
+
+        No-op if `order` has no entry yet (its default `ready_at` is already None).
+        Preserves any existing status fields.
+        """
+        if order not in self.entries:
+            return
+        entry = dict(self.entries[order])
+        entry["ready_at"] = None
+        self.entries[order] = entry
+
+    def clear_all_ready_at(self) -> None:
+        for order in list(self.entries):
+            self.clear_ready_at(order)
+
     def get_ready_at(self, order: int) -> Optional[datetime]:
         raw = self.entries.get(order, {}).get("ready_at")
         if not raw:

@@ -47,6 +47,7 @@ from coldcard_panic_drain.schedule.ics_export import write_ics_calendar
 from coldcard_panic_drain.schedule.load import load_schedule
 from coldcard_panic_drain.schedule.quiet_hours import parse_quiet_hours
 from coldcard_panic_drain.schedule.remind_logic import compute_remind_status
+from coldcard_panic_drain.schedule.reschedule import reschedule_schedule
 from coldcard_panic_drain.schedule.yaml_manifest import write_schedule
 from coldcard_panic_drain.sparrow.h2_reader import load_wallet
 from coldcard_panic_drain.sparrow.models import LabelSource
@@ -94,6 +95,19 @@ RESPECT_QUIET_HOURS_HELP = (
     "Skip broadcasting (leaving the entry pending) while inside the quiet "
     "hours recorded in schedule.yaml. Off by default: broadcast-due normally "
     "ignores quiet hours, which only affect calendar reminders and `remind`."
+)
+RESCHEDULE_SPREAD_HELP = (
+    "New broadcast schedule spread (hours) applied only to entries that haven't "
+    "broadcast yet, starting from now. Already-broadcast entries keep their "
+    "original broadcast_not_before."
+)
+RESCHEDULE_JITTER_HELP = (
+    SCHEDULE_JITTER_HELP + " Defaults to schedule.yaml's existing schedule_jitter, or 0.35."
+)
+SHUFFLE_PENDING_HELP = (
+    "Reshuffle which pending entry lands in which new time slot before assigning "
+    "times. Order numbers and labels are unchanged — only the timing assignment "
+    "among still-pending entries is reshuffled."
 )
 FOLLOW_HELP = (
     "Run as a long-lived watcher instead of exiting after one pass: sleeps "
@@ -425,6 +439,72 @@ def export_calendar(
         timezone=qh.get("timezone"),
     )
     typer.echo(f"Wrote {output / 'reminders.ics'}")
+
+
+@app.command()
+def reschedule(
+    output: Path = typer.Option(..., "--output", "-o"),
+    spread_hours: float = typer.Option(..., "--spread-hours", help=RESCHEDULE_SPREAD_HELP),
+    schedule_jitter: Optional[float] = typer.Option(
+        None, "--schedule-jitter", help=RESCHEDULE_JITTER_HELP
+    ),
+    shuffle_pending: bool = typer.Option(
+        False, "--shuffle-pending", help=SHUFFLE_PENDING_HELP
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the new schedule without writing any files."
+    ),
+    update_calendar: bool = typer.Option(
+        False, "--update-calendar", help="Regenerate reminders.ics from the new schedule."
+    ),
+    calendar_alarm_minutes: int = typer.Option(15, "--calendar-alarm-minutes"),
+) -> None:
+    """Change broadcast timing for unbroadcast entries — no re-plan, no re-sign."""
+    sched_path = output / "schedule.yaml"
+    if not sched_path.is_file():
+        typer.echo(f"Missing {sched_path}", err=True)
+        raise typer.Exit(1)
+
+    result = reschedule_schedule(
+        output,
+        spread_hours=spread_hours,
+        schedule_jitter=schedule_jitter,
+        shuffle_pending=shuffle_pending,
+        dry_run=dry_run,
+    )
+
+    verb = "Would reschedule" if dry_run else "Rescheduled"
+    typer.echo(
+        f"{verb} {result.rescheduled_count} pending entr"
+        f"{'y' if result.rescheduled_count == 1 else 'ies'}; "
+        f"{result.skipped_broadcast_count} already-broadcast entr"
+        f"{'y' if result.skipped_broadcast_count == 1 else 'ies'} left unchanged."
+    )
+    if result.pending_orders:
+        typer.echo(f"\n{'Order':>5}  {'Label':<24} {'Old time':<26} {'New time'}")
+        typer.echo("-" * 90)
+        for order in result.pending_orders:
+            typer.echo(
+                f"{order:>5}  {result.labels.get(order, '')[:24]:<24} "
+                f"{result.old_times[order].isoformat():<26} "
+                f"{result.new_times[order].isoformat()}"
+            )
+
+    if dry_run:
+        typer.echo("\nDry run: no files written.")
+        return
+
+    if update_calendar:
+        doc = load_schedule(sched_path)
+        qh = doc.get("quiet_hours") or {}
+        write_ics_calendar(
+            output / "reminders.ics",
+            doc.get("entries") or [],
+            batch_name=output.name,
+            alarm_minutes=calendar_alarm_minutes,
+            timezone=qh.get("timezone"),
+        )
+        typer.echo(f"Wrote {output / 'reminders.ics'}")
 
 
 @app.command("broadcast-due")

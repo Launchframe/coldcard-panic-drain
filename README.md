@@ -148,6 +148,33 @@ Each invocation is a single `run_broadcast_due(max_count=1)` pass — the same l
 
 `broadcast-state.yaml` tracks completed broadcasts (and any pending jitter draw) and survives reboots.
 
+### 10. Reschedule broadcast timing (optional)
+
+If you've already run `generate` and signed some or all PSBTs but want different broadcast timing — e.g. spread it out further, or shift it later — use `reschedule` instead of re-running `plan`/`generate`. It only rewrites `broadcast_not_before` in `schedule.yaml` for entries that haven't broadcast yet (per `broadcast-state.yaml`); PSBTs, labels, and fees are untouched, so already-signed PSBTs stay valid.
+
+```bash
+coldcard-panic-drain reschedule -o /Volumes/MICROSD/panic-batch-001 \
+  --spread-hours 72 \
+  --dry-run
+```
+
+Review the printed table (order, label, old time, new time — no addresses), then drop `--dry-run` to write the change:
+
+```bash
+coldcard-panic-drain reschedule -o /Volumes/MICROSD/panic-batch-001 \
+  --spread-hours 72 \
+  --update-calendar
+```
+
+- Already-`broadcast` entries keep their original `broadcast_not_before` — reschedule never touches them.
+- `failed` entries (e.g. a prior `broadcast-due` rejection) are rescheduled along with pending ones, in case you want to retry with new timing; their `failed` status itself is not cleared.
+- `--schedule-jitter` defaults to whatever is already in `schedule.yaml` (falls back to `0.35` if absent) — pass a value to change it.
+- `--shuffle-pending` reshuffles which pending entry lands in which new time slot before assigning times; entry `order` numbers and labels don't change, only which pending entry gets which new timestamp.
+- Any pending runtime-jitter draw (`ready_at` in `broadcast-state.yaml`, see `--broadcast-jitter-minutes` above) for a rescheduled entry is cleared so `broadcast-due` re-draws it against the new time.
+- `--update-calendar` regenerates `reminders.ics` from the updated schedule (same as `export-calendar`).
+
+See [FAQS.md](FAQS.md#reschedule-vs-re-plan) for when to use `reschedule` vs. re-running `plan`.
+
 ## Reuse (Wallet B → Wallet C)
 
 Same commands with `--source` = staging wallet and `--dest` = final wallet.
