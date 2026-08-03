@@ -478,6 +478,7 @@ def broadcast_due(
                 broadcast_jitter_minutes=broadcast_jitter_minutes,
                 respect_quiet_hours=respect_quiet_hours,
                 on_results=_print_broadcast_results,
+                on_heartbeat=lambda msg: typer.echo(msg, err=True),
             )
         except ValueError as e:
             typer.echo(f"ERROR: {e}", err=True)

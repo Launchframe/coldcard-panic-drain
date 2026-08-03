@@ -13,8 +13,10 @@ from coldcard_panic_drain.broadcast.follow import (
     MAX_SLEEP_CHUNK_SECONDS,
     ShutdownFlag,
     compute_next_broadcast_wake,
+    format_follow_heartbeat,
     run_broadcast_follow,
 )
+from coldcard_panic_drain.broadcast.runner import BroadcastResult
 from coldcard_panic_drain.broadcast.state import BroadcastState, state_path
 
 
@@ -31,6 +33,108 @@ def _entry(order: int, not_before: datetime, label: str = "coin") -> dict:
         "signed": f"psbts_signed/{label}-signed.psbt",
         "broadcast_not_before": not_before.isoformat(),
     }
+
+
+def test_format_follow_heartbeat_uses_utc_iso_timestamps():
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    wake = datetime(2026, 1, 1, 13, 30, 0, tzinfo=timezone.utc)
+    msg = format_follow_heartbeat(
+        now, wake, phase="sleeping", detail="5400s until wake"
+    )
+    assert msg.startswith("2026-01-01T12:00:00+00:00 follow sleeping")
+    assert "wake=2026-01-01T13:30:00+00:00" in msg
+    assert msg.endswith("5400s until wake")
+
+
+def test_run_broadcast_follow_emits_checked_and_sleeping_heartbeats(
+    tmp_path: Path, monkeypatch
+):
+    heartbeats: list[str] = []
+    flag = ShutdownFlag()
+
+    def fake_sleep(_seconds: float) -> None:
+        flag.requested = True
+
+    monkeypatch.setattr(
+        "coldcard_panic_drain.broadcast.follow.run_broadcast_due",
+        lambda output_dir, rpc, **kwargs: [],
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    run_broadcast_follow(
+        tmp_path,
+        MagicMock(),
+        shutdown_flag=flag,
+        now_fn=lambda: now,
+        sleep_fn=fake_sleep,
+        on_heartbeat=heartbeats.append,
+    )
+
+    assert any(" follow checked " in h for h in heartbeats)
+    assert any(" follow sleeping " in h for h in heartbeats)
+    assert any("no due entries" in h for h in heartbeats)
+
+
+def test_run_broadcast_follow_checked_heartbeat_summarizes_first_result(
+    tmp_path: Path, monkeypatch
+):
+    heartbeats: list[str] = []
+    flag = ShutdownFlag()
+    result = BroadcastResult(3, "coin", "broadcast")
+
+    def fake_sleep(_seconds: float) -> None:
+        flag.requested = True
+
+    monkeypatch.setattr(
+        "coldcard_panic_drain.broadcast.follow.run_broadcast_due",
+        lambda output_dir, rpc, **kwargs: [result],
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    run_broadcast_follow(
+        tmp_path,
+        MagicMock(),
+        shutdown_flag=flag,
+        now_fn=lambda: now,
+        sleep_fn=fake_sleep,
+        on_heartbeat=heartbeats.append,
+    )
+
+    assert any("broadcast order 3" in h for h in heartbeats)
+
+
+def test_sleep_chunks_emit_heartbeat_when_on_heartbeat_provided(
+    tmp_path: Path, monkeypatch
+):
+    clock = {"now": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    not_before = clock["now"] + timedelta(seconds=150)
+    _write_schedule(tmp_path, [_entry(1, not_before)])
+
+    monkeypatch.setattr(
+        "coldcard_panic_drain.broadcast.follow.run_broadcast_due",
+        lambda output_dir, rpc, **kwargs: [],
+    )
+
+    flag = ShutdownFlag()
+    heartbeats: list[str] = []
+
+    def fake_sleep(seconds: float) -> None:
+        clock["now"] += timedelta(seconds=seconds)
+        if len([h for h in heartbeats if " follow heartbeat " in h]) >= 2:
+            flag.requested = True
+
+    run_broadcast_follow(
+        tmp_path,
+        MagicMock(),
+        shutdown_flag=flag,
+        now_fn=lambda: clock["now"],
+        sleep_fn=fake_sleep,
+        on_heartbeat=heartbeats.append,
+    )
+
+    heartbeat_lines = [h for h in heartbeats if " follow heartbeat " in h]
+    assert len(heartbeat_lines) >= 2
+    assert all("still waiting" in h for h in heartbeat_lines)
 
 
 def test_compute_next_wake_falls_back_to_poll_interval_without_schedule(tmp_path: Path):
