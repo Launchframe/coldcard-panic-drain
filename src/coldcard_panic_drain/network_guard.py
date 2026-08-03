@@ -15,8 +15,11 @@ _ORIGINAL_CREATE_CONNECTION = socket.create_connection
 _SHARED_ADDRESS_SPACE = ipaddress.ip_network("100.64.0.0/10")
 
 # During create_connection("host.local", ...), DNS may resolve to a LAN/CGNAT IP
-# that is then passed to socket.connect. Track the pending hostname so connect()
-# can allow those resolved targets for the same thread.
+# that is then passed to socket.connect. We resolve the hostname ourselves first,
+# keep only the candidate IPs that already pass the allow-list, and let connect()
+# match against that pre-vetted set for the same thread. This must NOT be a blanket
+# "any IP is fine once the hostname ends in .local" bypass — a poisoned resolver or
+# hosts-file entry could otherwise point a *.local name at an arbitrary public IP.
 _pending = threading.local()
 
 _LOCALHOST_MSG = (
@@ -52,18 +55,43 @@ def _is_allowed_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return False
 
 
+def _resolve_allowed_ips(host: str, port: int) -> set[str]:
+    """Resolve `host` and return only the candidate IPs that pass the allow-list.
+
+    Resolution failures or hosts with no allowed candidates return an empty set,
+    which callers must treat as "block" — never as "skip the check".
+    """
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return set()
+    allowed: set[str] = set()
+    for info in infos:
+        ip_str = info[4][0]
+        try:
+            ip = ipaddress.ip_address(_strip_ipv6_zone(ip_str))
+        except ValueError:
+            continue
+        if _is_allowed_ip(ip):
+            allowed.add(ip_str)
+    return allowed
+
+
 def _is_allowed_host(host: str) -> bool:
     if not host:
         return False
     h = host.strip().lower()
     if h in ("127.0.0.1", "::1") or _is_local_mdns_host(h):
         return True
-    # Resolved IP from an in-flight create_connection to a *.local host.
-    pending = getattr(_pending, "hostname", None)
-    if pending is not None and _is_local_mdns_host(pending):
+    stripped = _strip_ipv6_zone(h)
+    # Resolved IP from an in-flight create_connection to a *.local host — only
+    # matches IPs that were themselves pre-validated as private/loopback/link-local
+    # or CGNAT by _resolve_allowed_ips, never the raw hostname.
+    pending_ips = getattr(_pending, "allowed_ips", None)
+    if pending_ips and stripped in pending_ips:
         return True
     try:
-        ip = ipaddress.ip_address(_strip_ipv6_zone(h))
+        ip = ipaddress.ip_address(stripped)
         return _is_allowed_ip(ip)
     except ValueError:
         return False
@@ -92,13 +120,17 @@ def _guarded_create_connection(address, *args, **kwargs):
         host = str(address[0])
         _check_host(host)
         if _is_local_mdns_host(host):
-            _pending.hostname = host
+            port = address[1] if len(address) > 1 else 0
+            allowed_ips = _resolve_allowed_ips(host, port)
+            if not allowed_ips:
+                raise NetworkBlockedError(_LOCALHOST_MSG)
+            _pending.allowed_ips = allowed_ips
             pending_set = True
     try:
         return _ORIGINAL_CREATE_CONNECTION(address, *args, **kwargs)
     finally:
         if pending_set:
-            _pending.hostname = None
+            _pending.allowed_ips = None
 
 
 def enable_localhost_guard() -> None:
