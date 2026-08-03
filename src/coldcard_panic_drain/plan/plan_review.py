@@ -149,7 +149,13 @@ def run_mapping_review(
                 retry=retry,
             )
             stdout.flush()
-            line = stdin.readline().strip()
+            raw = stdin.readline()
+            if raw == "":
+                # EOF (closed/exhausted stdin) — never treat as "just retry" or
+                # the loop would spin forever re-printing the prompt with no
+                # way for a non-interactive caller to make progress.
+                raise ValueError("Aborted: mapping not confirmed (no input received).")
+            line = raw.strip()
             if line == MAPPING_ACK:
                 return state
             if line.lower() in PLAN_EXIT_WORDS:

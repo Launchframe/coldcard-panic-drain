@@ -112,10 +112,11 @@ SHUFFLE_PENDING_HELP = (
 FOLLOW_HELP = (
     "Run as a long-lived watcher instead of exiting after one pass: sleeps "
     "(in <=60s chunks) until the next entry is due, then calls the same "
-    "single-shot broadcast-due logic. Replaces an hourly cron entry — see "
-    "README.md §9. CPU load is negligible: a sleeping process that wakes at "
-    "most once a minute to check schedule.yaml, with a brief RPC call only "
-    "when something actually broadcasts."
+    "broadcast-due logic (honoring --max-count per wake) before sleeping "
+    "again. Replaces an hourly cron entry — see README.md §9. CPU load is "
+    "negligible: a sleeping process that wakes at most once a minute to "
+    "check schedule.yaml, with a brief RPC call only when something "
+    "actually broadcasts."
 )
 
 
@@ -500,7 +501,11 @@ def broadcast_due(
     ),
     rpc_user: Optional[str] = typer.Option(None, "--rpc-user"),
     rpc_password: Optional[str] = typer.Option(None, "--rpc-password"),
-    max_count: int = typer.Option(1, "--max-count"),
+    max_count: int = typer.Option(
+        1,
+        "--max-count",
+        help="Broadcast at most this many due entries per invocation (or per --follow wake).",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run"),
     skip_failed: bool = typer.Option(False, "--skip-failed"),
     follow: bool = typer.Option(False, "--follow", help=FOLLOW_HELP),
@@ -540,6 +545,7 @@ def broadcast_due(
             run_broadcast_follow(
                 output,
                 rpc,
+                max_count=max_count,
                 dry_run=dry_run,
                 skip_failed=skip_failed,
                 broadcast_jitter_minutes=broadcast_jitter_minutes,

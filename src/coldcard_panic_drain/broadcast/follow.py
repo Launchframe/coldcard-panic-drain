@@ -26,7 +26,8 @@ from coldcard_panic_drain.broadcast.runner import (
     run_broadcast_due,
 )
 from coldcard_panic_drain.broadcast.state import BroadcastState, state_path
-from coldcard_panic_drain.schedule.load import load_schedule
+from coldcard_panic_drain.schedule.load import load_schedule, schedule_quiet_hours
+from coldcard_panic_drain.schedule.quiet_hours import in_quiet_hours, next_allowed_time
 
 MAX_SLEEP_CHUNK_SECONDS = 60
 INTERRUPTIBLE_SLEEP_SLICE_SECONDS = 1.0  # max latency from SIGINT to exit loop
@@ -96,15 +97,22 @@ def compute_next_broadcast_wake(
     now: Optional[datetime] = None,
     *,
     poll_interval: timedelta = DEFAULT_POLL_INTERVAL,
+    respect_quiet_hours: bool = False,
 ) -> datetime:
     """Earliest time `run_broadcast_due` is worth calling again.
 
     Looks at every not-yet-broadcast schedule entry and takes the later of its
     `broadcast_not_before` and any persisted runtime-jitter `ready_at`. If the
-    soonest such time is already in the past (e.g. blocked on quiet hours, a
-    missing signed PSBT, or a jitter draw not yet made), falls back to
-    `now + poll_interval` instead of returning a past/now timestamp — that
-    fallback is what keeps --follow from spinning in a tight loop.
+    soonest such time is already in the past (e.g. blocked on a missing signed
+    PSBT, or a jitter draw not yet made), falls back to `now + poll_interval`
+    instead of returning a past/now timestamp — that fallback is what keeps
+    --follow from spinning in a tight loop.
+
+    When `respect_quiet_hours` is set and an entry is already due but `now`
+    falls inside schedule.yaml's quiet window, the fallback is the quiet
+    window's end instead of `now + poll_interval` — otherwise --follow would
+    poll every `poll_interval` for the entire quiet window (e.g. every 60s for
+    up to 8+ hours) instead of sleeping straight through it.
     """
     now = now or datetime.now(timezone.utc)
     sched_path = output_dir / "schedule.yaml"
@@ -113,8 +121,10 @@ def compute_next_broadcast_wake(
 
     doc = load_schedule(sched_path)
     state = BroadcastState.load(state_path(output_dir))
+    quiet_hours = schedule_quiet_hours(doc) if respect_quiet_hours else None
 
     earliest: Optional[datetime] = None
+    due_now = False
     for entry in doc.get("entries") or []:
         order = int(entry["order"])
         if state.is_broadcast(order):
@@ -124,9 +134,15 @@ def compute_next_broadcast_wake(
         if ready_at is not None and ready_at > wake:
             wake = ready_at
         if wake <= now:
+            due_now = True
             continue
         if earliest is None or wake < earliest:
             earliest = wake
+
+    if quiet_hours is not None and due_now and in_quiet_hours(now, quiet_hours):
+        quiet_end = next_allowed_time(now, quiet_hours)
+        if earliest is None or quiet_end < earliest:
+            return quiet_end
 
     if earliest is None:
         return now + poll_interval
@@ -166,6 +182,7 @@ def run_broadcast_follow(
     output_dir: Path,
     rpc: CoreRpcClient,
     *,
+    max_count: int = 1,
     dry_run: bool = False,
     skip_failed: bool = False,
     broadcast_jitter_minutes: int = DEFAULT_BROADCAST_JITTER_MINUTES,
@@ -180,11 +197,14 @@ def run_broadcast_follow(
 ) -> None:
     """Replace an hourly cron with a single sleeping process.
 
-    Each iteration calls `run_broadcast_due(max_count=1)` — identical
-    single-shot logic to a cron invocation — then sleeps (in <=60s chunks,
-    each split into ~1s interruptible slices) until the next entry is
-    actually worth checking. Install a `shutdown_flag` for tests;
-    production callers get SIGINT/SIGTERM wired up automatically.
+    Each iteration calls `run_broadcast_due(max_count=max_count)` — identical
+    logic to a cron invocation — then sleeps (in <=60s chunks, each split into
+    ~1s interruptible slices) until the next entry is actually worth
+    checking. `max_count` defaults to 1 (one broadcast per wake) since the
+    loop runs indefinitely anyway; pass a higher value to drain multiple due
+    entries per iteration instead of waiting out the sleep between each one.
+    Install a `shutdown_flag` for tests; production callers get
+    SIGINT/SIGTERM wired up automatically.
     """
     flag = shutdown_flag or ShutdownFlag(on_request=on_shutdown_request)
     if shutdown_flag is None:
@@ -194,7 +214,7 @@ def run_broadcast_follow(
         results = run_broadcast_due(
             output_dir,
             rpc,
-            max_count=1,
+            max_count=max_count,
             dry_run=dry_run,
             skip_failed=skip_failed,
             broadcast_jitter_minutes=broadcast_jitter_minutes,
@@ -218,7 +238,9 @@ def run_broadcast_follow(
         if flag.requested:
             break
 
-        wake = compute_next_broadcast_wake(output_dir, now)
+        wake = compute_next_broadcast_wake(
+            output_dir, now, respect_quiet_hours=respect_quiet_hours
+        )
         if on_heartbeat is not None:
             seconds_until = max(0, int((wake - now).total_seconds()))
             on_heartbeat(

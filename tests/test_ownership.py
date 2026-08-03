@@ -46,6 +46,16 @@ def test_confirm_dest_wallet_ownership_exits_on_exit_case_insensitive():
         confirm_dest_wallet_ownership(dest, stdin=stdin, stdout=stdout)
 
 
+def test_confirm_dest_wallet_ownership_aborts_on_eof_instead_of_looping_forever():
+    # readline() on exhausted/closed stdin returns "" forever; must not be
+    # treated as an infinite series of "not recognized" retries.
+    dest = make_test_wallet_b()
+    stdin = io.StringIO("")
+    stdout = io.StringIO()
+    with pytest.raises(ValueError, match="ownership not confirmed"):
+        confirm_dest_wallet_ownership(dest, stdin=stdin, stdout=stdout)
+
+
 def test_confirm_dest_wallet_ownership_shows_wallet_identity():
     dest = make_test_wallet_b(name="staging-wallet")
     stdin = io.StringIO(OWNERSHIP_ACK + "\n")

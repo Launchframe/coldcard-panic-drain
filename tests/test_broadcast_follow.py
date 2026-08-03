@@ -202,6 +202,64 @@ def test_compute_next_wake_picks_earliest_of_multiple_pending_entries(tmp_path: 
     assert compute_next_broadcast_wake(tmp_path, now) == soon
 
 
+def _write_schedule_with_quiet_hours(
+    tmp_path: Path, entries: list[dict], *, start: str, end: str, tz: str = "UTC"
+) -> None:
+    (tmp_path / "schedule.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "entries": entries,
+                "quiet_hours": {"start": start, "end": end, "timezone": tz},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_compute_next_wake_bumps_to_quiet_hours_end_when_due_but_blocked(tmp_path: Path):
+    # 23:00 UTC is inside a 22:00->08:00 quiet window; the entry is already
+    # due (broadcast_not_before in the past), so without quiet-hours
+    # awareness this would fall back to `now + poll_interval` (60s) and keep
+    # polling every minute for hours instead of sleeping through the window.
+    now = datetime(2026, 1, 1, 23, 0, 0, tzinfo=timezone.utc)
+    _write_schedule_with_quiet_hours(
+        tmp_path,
+        [_entry(1, now - timedelta(minutes=5))],
+        start="22:00",
+        end="08:00",
+    )
+    wake = compute_next_broadcast_wake(tmp_path, now, respect_quiet_hours=True)
+    assert wake == datetime(2026, 1, 2, 8, 0, 0, tzinfo=timezone.utc)
+
+
+def test_compute_next_wake_ignores_quiet_hours_unless_respect_quiet_hours_set(
+    tmp_path: Path,
+):
+    now = datetime(2026, 1, 1, 23, 0, 0, tzinfo=timezone.utc)
+    _write_schedule_with_quiet_hours(
+        tmp_path,
+        [_entry(1, now - timedelta(minutes=5))],
+        start="22:00",
+        end="08:00",
+    )
+    # respect_quiet_hours defaults to False: unchanged short poll fallback.
+    assert compute_next_broadcast_wake(tmp_path, now) == now + DEFAULT_POLL_INTERVAL
+
+
+def test_compute_next_wake_quiet_hours_does_not_delay_entry_not_yet_due(tmp_path: Path):
+    # A future entry landing outside the quiet window is unaffected even
+    # with respect_quiet_hours=True.
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    not_before = now + timedelta(hours=1)
+    _write_schedule_with_quiet_hours(
+        tmp_path, [_entry(1, not_before)], start="22:00", end="08:00"
+    )
+    assert (
+        compute_next_broadcast_wake(tmp_path, now, respect_quiet_hours=True)
+        == not_before
+    )
+
+
 def test_run_broadcast_follow_stops_on_shutdown_flag(tmp_path: Path, monkeypatch):
     calls = {"run": 0, "sleep": 0}
 
@@ -335,6 +393,73 @@ def test_shutdown_flag_on_request_called_once():
     flag.request()
     flag.request()
     assert calls["n"] == 1
+
+
+def test_run_broadcast_follow_forwards_max_count_to_run_broadcast_due(
+    tmp_path: Path, monkeypatch
+):
+    captured_kwargs: dict = {}
+
+    def fake_run_broadcast_due(output_dir, rpc, **kwargs):
+        captured_kwargs.update(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        "coldcard_panic_drain.broadcast.follow.run_broadcast_due",
+        fake_run_broadcast_due,
+    )
+    flag = ShutdownFlag()
+
+    def fake_sleep(_seconds: float) -> None:
+        flag.requested = True
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    run_broadcast_follow(
+        tmp_path,
+        MagicMock(),
+        max_count=5,
+        shutdown_flag=flag,
+        now_fn=lambda: now,
+        sleep_fn=fake_sleep,
+    )
+
+    assert captured_kwargs["max_count"] == 5
+
+
+def test_run_broadcast_follow_forwards_respect_quiet_hours_to_compute_wake(
+    tmp_path: Path, monkeypatch
+):
+    captured_kwargs: dict = {}
+    real_compute = compute_next_broadcast_wake
+
+    def spy_compute(output_dir, now=None, **kwargs):
+        captured_kwargs.update(kwargs)
+        return real_compute(output_dir, now, **kwargs)
+
+    monkeypatch.setattr(
+        "coldcard_panic_drain.broadcast.follow.run_broadcast_due",
+        lambda output_dir, rpc, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "coldcard_panic_drain.broadcast.follow.compute_next_broadcast_wake",
+        spy_compute,
+    )
+    flag = ShutdownFlag()
+
+    def fake_sleep(_seconds: float) -> None:
+        flag.requested = True
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    run_broadcast_follow(
+        tmp_path,
+        MagicMock(),
+        respect_quiet_hours=True,
+        shutdown_flag=flag,
+        now_fn=lambda: now,
+        sleep_fn=fake_sleep,
+    )
+
+    assert captured_kwargs["respect_quiet_hours"] is True
 
 
 def test_run_broadcast_follow_calls_on_shutdown_request(tmp_path: Path, monkeypatch):

@@ -128,6 +128,31 @@ def test_run_mapping_review_retries_on_typo():
     assert len(table_prints) == 1
 
 
+def test_run_mapping_review_aborts_on_eof_instead_of_looping_forever():
+    utxos, dest, assignments = _sample_assignments()
+    state = PlanReviewState(
+        assignments=assignments,
+        fee_base=25,
+        fee_jitter=0.0,
+        amount_unit="sats",
+        utxos=utxos,
+        dest_wallet=dest,
+        chain_tip=900_000,
+        min_blocks_apart=2,
+    )
+    stdin = io.StringIO("")  # closed/exhausted stdin: readline() returns "" forever
+    stdout = io.StringIO()
+    with pytest.raises(ValueError, match="mapping not confirmed"):
+        run_mapping_review(
+            state,
+            print_mapping_table=lambda *_a, **_k: None,
+            stdin=stdin,
+            stdout=stdout,
+            prompt=lambda *_a, **_k: "",
+            echo=lambda *_a, **_k: None,
+        )
+
+
 def test_run_mapping_review_accepts_proceed():
     utxos, dest, assignments = _sample_assignments()
     state = PlanReviewState(
