@@ -44,7 +44,7 @@ from coldcard_panic_drain.schedule.remind_logic import compute_remind_status
 from coldcard_panic_drain.schedule.yaml_manifest import write_schedule
 from coldcard_panic_drain.sparrow.h2_reader import load_wallet
 from coldcard_panic_drain.sparrow.models import LabelSource
-from coldcard_panic_drain.util import format_amount, normalize_display_unit, sats_to_btc_str
+from coldcard_panic_drain.util import format_amount, normalize_display_unit
 from coldcard_panic_drain.verify.checklist import write_verification_checklist
 from coldcard_panic_drain.verify.manifest import verify_signed_psbts
 from coldcard_panic_drain.verify.ownership import confirm_dest_wallet_ownership
@@ -71,26 +71,6 @@ FEE_JITTER_HELP = (
     "from 140 sats up to the jittered maximum instead. "
     "Example: fee-base 25 and fee-jitter 0.15 → about 2,975–4,025 sats per PSBT."
 )
-
-
-def _common_options(
-    source: Path = typer.Option(..., "--source", "-s", help="Wallet A Sparrow .mv.db"),
-    dest: Path = typer.Option(..., "--dest", "-d", help="Wallet B Sparrow .mv.db"),
-    output: Path = typer.Option(..., "--output", "-o", help="Output directory (e.g. microSD)"),
-    fee_base: int = typer.Option(25, "--fee-base", help=FEE_BASE_HELP),
-    fee_jitter: float = typer.Option(0.15, "--fee-jitter", help=FEE_JITTER_HELP),
-    min_blocks_apart: int = typer.Option(2, "--min-blocks-apart", help="nLockTime spacing"),
-    spread_hours: float = typer.Option(48.0, "--spread-hours", help="Broadcast schedule spread"),
-) -> dict:
-    return {
-        "source": source,
-        "dest": dest,
-        "output": output,
-        "fee_base": fee_base,
-        "fee_jitter": fee_jitter,
-        "min_blocks_apart": min_blocks_apart,
-        "spread_hours": spread_hours,
-    }
 
 
 def _mark_existing_labels(utxos) -> None:
