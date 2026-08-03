@@ -70,14 +70,13 @@ def run_broadcast_due(
 ) -> list[BroadcastResult]:
     sched_path = output_dir / "schedule.yaml"
     doc = load_schedule(sched_path)
-    if not dry_run:
-        ensure_signed_psbt_dir_ready(output_dir)
     now = datetime.now(timezone.utc)
     state = BroadcastState.load(state_path(output_dir))
     rng = rng or random.Random()
     quiet_hours = schedule_quiet_hours(doc) if respect_quiet_hours else None
     results: list[BroadcastResult] = []
     sent = 0
+    signed_dir_checked = dry_run
 
     for entry in sorted(doc.get("entries") or [], key=lambda e: e.get("order", 0)):
         if sent >= max_count:
@@ -95,6 +94,10 @@ def run_broadcast_due(
         not_before = _parse_not_before(entry["broadcast_not_before"])
         if now < not_before:
             continue
+
+        if not signed_dir_checked:
+            ensure_signed_psbt_dir_ready(output_dir)
+            signed_dir_checked = True
 
         signed_rel = entry.get("signed", "")
         try:

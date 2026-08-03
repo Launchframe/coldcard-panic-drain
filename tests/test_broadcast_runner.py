@@ -62,6 +62,37 @@ def test_run_broadcast_due_requires_psbts_signed_dir(tmp_path: Path):
         run_broadcast_due(tmp_path, MagicMock(), max_count=1)
 
 
+def test_run_broadcast_due_skips_signed_dir_check_when_all_broadcast(tmp_path: Path):
+    _write_schedule(tmp_path, "psbts_signed/coin-signed.psbt")
+    state = BroadcastState()
+    state.mark_broadcast(1, "aa" * 32)
+    state.save_atomic(state_path(tmp_path))
+
+    results = run_broadcast_due(tmp_path, MagicMock(), max_count=1)
+
+    assert len(results) == 1
+    assert results[0].action == "already"
+
+
+def test_run_broadcast_due_skips_signed_dir_check_when_none_due_yet(tmp_path: Path):
+    future = datetime.now(timezone.utc) + timedelta(hours=1)
+    doc = {
+        "entries": [
+            {
+                "order": 1,
+                "label": "coin",
+                "signed": "psbts_signed/coin-signed.psbt",
+                "broadcast_not_before": future.isoformat(),
+            }
+        ]
+    }
+    (tmp_path / "schedule.yaml").write_text(yaml.safe_dump(doc), encoding="utf-8")
+
+    results = run_broadcast_due(tmp_path, MagicMock(), max_count=1)
+
+    assert results == []
+
+
 def test_run_broadcast_due_requires_nonempty_psbts_signed_dir(tmp_path: Path):
     _write_schedule(tmp_path, "psbts_signed/coin-signed.psbt")
     (tmp_path / "psbts_signed").mkdir()
