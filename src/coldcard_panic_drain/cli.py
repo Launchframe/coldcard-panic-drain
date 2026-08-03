@@ -11,6 +11,7 @@ import typer
 from coldcard_panic_drain.broadcast.core_rpc import CoreRpcClient
 from coldcard_panic_drain.broadcast.follow import run_broadcast_follow
 from coldcard_panic_drain.broadcast.paths import signed_psbt_dir
+from coldcard_panic_drain.broadcast.rpc_url import validate_onion_rpc_access
 from coldcard_panic_drain.broadcast.runner import (
     DEFAULT_BROADCAST_JITTER_MINUTES,
     FEE_URGENCY_BANNER,
@@ -117,6 +118,19 @@ FOLLOW_HELP = (
     "negligible: a sleeping process that wakes at most once a minute to "
     "check schedule.yaml, with a brief RPC call only when something "
     "actually broadcasts."
+)
+
+ONION_PRIVACY_BANNER = (
+    "WARNING: Broadcasting via Tor (.onion) RPC can leak timing or metadata if Tor, "
+    "your node, or this machine is misconfigured. Only proceed if you control the "
+    "hidden service and accept the privacy tradeoffs."
+)
+ALLOW_ONION_RPC_HELP = (
+    "Allow broadcast-due to use a Tor .onion --rpc-url (http or https). "
+    "Requires --i-understand-onion-privacy-risk."
+)
+ONION_PRIVACY_ACK_HELP = (
+    "Confirm you accept privacy/timing risks when broadcasting over Tor RPC."
 )
 
 
@@ -494,7 +508,7 @@ def broadcast_due(
     rpc_url: str = typer.Option(
         "http://127.0.0.1:8332",
         "--rpc-url",
-        help="Bitcoin Core RPC URL (localhost, loopback, or *.local only)",
+        help="Bitcoin Core RPC URL (localhost, *.local, or .onion with Tor flags)",
     ),
     rpc_cookie_file: Optional[Path] = typer.Option(
         Path("~/.bitcoin/.cookie"), "--rpc-cookie-file"
@@ -515,34 +529,78 @@ def broadcast_due(
     respect_quiet_hours: bool = typer.Option(
         False, "--respect-quiet-hours", help=RESPECT_QUIET_HOURS_HELP
     ),
+    allow_onion_rpc: bool = typer.Option(False, "--allow-onion-rpc", help=ALLOW_ONION_RPC_HELP),
+    onion_privacy_ack: bool = typer.Option(
+        False,
+        "--i-understand-onion-privacy-risk",
+        help=ONION_PRIVACY_ACK_HELP,
+    ),
 ) -> None:
-    """Broadcast due signed PSBTs via local Bitcoin Core (localhost or *.local RPC)."""
+    """Broadcast due signed PSBTs via local Bitcoin Core (localhost, *.local, or Tor .onion RPC)."""
     typer.echo(FEE_URGENCY_BANNER, err=True)
     try:
+        using_onion = validate_onion_rpc_access(rpc_url, allow_onion_rpc, onion_privacy_ack)
+    except ValueError as e:
+        typer.echo(f"ERROR: {e}", err=True)
+        raise typer.Exit(1) from e
+    if using_onion:
+        typer.echo(ONION_PRIVACY_BANNER, err=True)
+    rpc = None
+    try:
         if rpc_user and rpc_password:
-            rpc = CoreRpcClient(rpc_url, user=rpc_user, password=rpc_password)
+            rpc = CoreRpcClient(
+                rpc_url,
+                user=rpc_user,
+                password=rpc_password,
+                allow_onion=using_onion,
+            )
         else:
             rpc = CoreRpcClient(
                 rpc_url,
                 cookie_file=rpc_cookie_file.expanduser() if rpc_cookie_file else None,
+                allow_onion=using_onion,
             )
     except ValueError as e:
         typer.echo(f"ERROR: {e}", err=True)
         raise typer.Exit(1) from e
 
-    if follow:
-        typer.echo(
-            "Running in --follow mode. Sleeping between checks; press Ctrl-C to stop."
-        )
-        shutdown_requested = False
+    try:
+        if follow:
+            typer.echo(
+                "Running in --follow mode. Sleeping between checks; press Ctrl-C to stop."
+            )
+            shutdown_requested = False
 
-        def _on_shutdown_request() -> None:
-            nonlocal shutdown_requested
-            shutdown_requested = True
-            typer.echo("\nStopping (interrupt received)...", err=True)
+            def _on_shutdown_request() -> None:
+                nonlocal shutdown_requested
+                shutdown_requested = True
+                typer.echo("\nStopping (interrupt received)...", err=True)
+
+            try:
+                run_broadcast_follow(
+                    output,
+                    rpc,
+                    max_count=max_count,
+                    dry_run=dry_run,
+                    skip_failed=skip_failed,
+                    broadcast_jitter_minutes=broadcast_jitter_minutes,
+                    respect_quiet_hours=respect_quiet_hours,
+                    on_results=_print_broadcast_results,
+                    on_heartbeat=lambda msg: typer.echo(msg, err=True),
+                    on_shutdown_request=_on_shutdown_request,
+                )
+            except ValueError as e:
+                typer.echo(f"ERROR: {e}", err=True)
+                raise typer.Exit(1) from e
+            except KeyboardInterrupt:
+                typer.echo("\nStopped.", err=True)
+                return
+            if shutdown_requested:
+                typer.echo("Stopped.", err=True)
+            return
 
         try:
-            run_broadcast_follow(
+            results = run_broadcast_due(
                 output,
                 rpc,
                 max_count=max_count,
@@ -550,37 +608,17 @@ def broadcast_due(
                 skip_failed=skip_failed,
                 broadcast_jitter_minutes=broadcast_jitter_minutes,
                 respect_quiet_hours=respect_quiet_hours,
-                on_results=_print_broadcast_results,
-                on_heartbeat=lambda msg: typer.echo(msg, err=True),
-                on_shutdown_request=_on_shutdown_request,
             )
         except ValueError as e:
             typer.echo(f"ERROR: {e}", err=True)
             raise typer.Exit(1) from e
-        except KeyboardInterrupt:
-            typer.echo("\nStopped.", err=True)
+        if not results:
+            typer.echo("No due entries to broadcast.")
             return
-        if shutdown_requested:
-            typer.echo("Stopped.", err=True)
-        return
-
-    try:
-        results = run_broadcast_due(
-            output,
-            rpc,
-            max_count=max_count,
-            dry_run=dry_run,
-            skip_failed=skip_failed,
-            broadcast_jitter_minutes=broadcast_jitter_minutes,
-            respect_quiet_hours=respect_quiet_hours,
-        )
-    except ValueError as e:
-        typer.echo(f"ERROR: {e}", err=True)
-        raise typer.Exit(1) from e
-    if not results:
-        typer.echo("No due entries to broadcast.")
-        return
-    _print_broadcast_results(results)
+        _print_broadcast_results(results)
+    finally:
+        if rpc is not None:
+            rpc.close()
 
 
 @app.command()

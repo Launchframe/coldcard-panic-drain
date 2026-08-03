@@ -28,6 +28,12 @@ _LOCALHOST_MSG = (
 )
 
 
+_ONION_MSG = (
+    "coldcard-panic-drain blocked a non-local RPC connection. "
+    "Use --allow-onion-rpc only with a .onion --rpc-url you control."
+)
+
+
 class NetworkBlockedError(RuntimeError):
     """Raised when code attempts a non-localhost network connection."""
 
@@ -45,6 +51,24 @@ def _strip_ipv6_zone(host: str) -> str:
 def _is_local_mdns_host(host: str) -> bool:
     h = host.strip().lower().rstrip(".")
     return h == "localhost" or h.endswith(".local")
+
+
+def _is_onion_host(host: str) -> bool:
+    h = host.strip().lower().rstrip(".")
+    return h.endswith(".onion") and len(h) > len(".onion")
+
+
+def _onion_connections_enabled() -> bool:
+    return bool(getattr(_pending, "onion_enabled", False))
+
+
+def enable_onion_connections() -> None:
+    """Allow socket connects to .onion hostnames (broadcast-due opt-in only)."""
+    _pending.onion_enabled = True
+
+
+def disable_onion_connections() -> None:
+    _pending.onion_enabled = False
 
 
 def _is_allowed_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -83,6 +107,8 @@ def _is_allowed_host(host: str) -> bool:
     h = host.strip().lower()
     if h in ("127.0.0.1", "::1") or _is_local_mdns_host(h):
         return True
+    if _onion_connections_enabled() and _is_onion_host(h):
+        return True
     stripped = _strip_ipv6_zone(h)
     # Resolved IP from an in-flight create_connection to a *.local host — only
     # matches IPs that were themselves pre-validated as private/loopback/link-local
@@ -99,7 +125,12 @@ def _is_allowed_host(host: str) -> bool:
 
 def _check_host(host: str) -> None:
     if not _is_allowed_host(host):
-        raise NetworkBlockedError(_LOCALHOST_MSG)
+        h = host.strip().lower()
+        if _onion_connections_enabled() and _is_onion_host(h):
+            msg = _ONION_MSG
+        else:
+            msg = _LOCALHOST_MSG
+        raise NetworkBlockedError(msg)
 
 
 class _LocalhostSocket(_ORIGINAL_SOCKET):  # type: ignore[misc,valid-type]

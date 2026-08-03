@@ -2,7 +2,7 @@
 
 Offline CLI for migrating funds from a compromised Sparrow wallet (Wallet A) to a fresh wallet (Wallet B) without consolidating UTXOs or broadcasting in one shot.
 
-**Local network contract:** wallet processing (`plan`, `generate`, etc.) is file-only. The only network use is optional `broadcast-due`, which talks to **Bitcoin Core on localhost or a `*.local` host** (e.g. `https://happy-feet.local:8332`). Public/remote nodes require manual broadcast in Sparrow.
+**Local network contract:** wallet processing (`plan`, `generate`, etc.) is file-only. The only network use is optional `broadcast-due`, which talks to **Bitcoin Core on localhost, a `*.local` host**, or (opt-in) a **Tor `.onion` hidden service** via `--allow-onion-rpc` and `--i-understand-onion-privacy-risk`. Other remote nodes require manual broadcast in Sparrow.
 
 ## Requirements
 
@@ -115,6 +115,8 @@ Use competitive `--fee-base` at plan time — you are racing the attacker. See [
 
 Point `--rpc-url` at Core on the same machine (`http://127.0.0.1:8332`) or a LAN node via mDNS (`https://happy-feet.local:8332`). Bare IP addresses like `http://192.168.1.50:8332` are rejected — use a `*.local` hostname instead.
 
+**Tor (advanced):** if your node exposes RPC on a `.onion` address (http or https), pass both `--allow-onion-rpc` and `--i-understand-onion-privacy-risk`. This CLI opens a direct socket to the `.onion` hostname and does **not** configure SOCKS proxying itself — you typically need Tor running locally **and** system-level routing (e.g. `torsocks`, Tor `MapAddress`, or an equivalent) so `.onion` names resolve and traffic reaches the hidden service.
+
 **Primary: `--follow` (recommended).** Run one long-lived watcher instead of a cron entry:
 
 ```bash
@@ -145,6 +147,13 @@ See [FAQS.md](FAQS.md#broadcast-cadence-auto-broadcast-jitter-and-follow-mode) f
 ```
 
 Each invocation is a single `run_broadcast_due(max_count=1)` pass — the same logic `--follow` uses per wake — so `--broadcast-jitter-minutes` and `--respect-quiet-hours` work identically here.
+
+```bash
+# Tor hidden service (opt-in; read the privacy warning on stderr)
+coldcard-panic-drain broadcast-due -o /path/to/batch \
+  --rpc-url http://YOUR56CHARONIONADDRESS.onion:8332 \
+  --allow-onion-rpc --i-understand-onion-privacy-risk
+```
 
 `broadcast-state.yaml` tracks completed broadcasts (and any pending jitter draw) and survives reboots.
 
