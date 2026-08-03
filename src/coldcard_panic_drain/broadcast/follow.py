@@ -3,9 +3,10 @@
 The watcher never busy-loops: it sleeps in chunks of at most
 `MAX_SLEEP_CHUNK_SECONDS` until the next entry's `broadcast_not_before` (plus
 any runtime jitter draw already persisted in broadcast-state.yaml) or a
-bounded fallback poll interval, whichever is sooner. SIGINT/SIGTERM set a
-shutdown flag that is checked between sleep chunks, so the loop exits within
-one chunk instead of blocking for the remainder of a long sleep.
+bounded fallback poll interval, whichever is sooner. Each chunk is further
+split into ``INTERRUPTIBLE_SLEEP_SLICE_SECONDS`` slices so SIGINT/SIGTERM are
+re-checked frequently; the loop exits within ~1s of interrupt instead of
+blocking for the remainder of a long sleep.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from coldcard_panic_drain.broadcast.state import BroadcastState, state_path
 from coldcard_panic_drain.schedule.load import load_schedule
 
 MAX_SLEEP_CHUNK_SECONDS = 60
+INTERRUPTIBLE_SLEEP_SLICE_SECONDS = 1.0  # max latency from SIGINT to exit loop
 DEFAULT_POLL_INTERVAL = timedelta(seconds=60)
 
 
@@ -63,11 +65,16 @@ def _summarize_check_results(results: list[BroadcastResult]) -> str:
 class ShutdownFlag:
     """Mutable flag toggled by a signal handler (or a test) to stop the loop."""
 
-    def __init__(self) -> None:
+    def __init__(self, on_request: Callable[[], None] | None = None) -> None:
         self.requested = False
+        self._on_request = on_request
 
     def request(self, *_args: object) -> None:
+        if self.requested:
+            return
         self.requested = True
+        if self._on_request is not None:
+            self._on_request()
 
 
 def install_signal_handlers(flag: ShutdownFlag) -> None:
@@ -145,7 +152,14 @@ def _sleep_until(
                     now, wake, phase="heartbeat", detail="still waiting"
                 )
             )
-        sleep_fn(min(remaining, MAX_SLEEP_CHUNK_SECONDS))
+        chunk = min(remaining, MAX_SLEEP_CHUNK_SECONDS)
+        slept = 0.0
+        while slept < chunk and not flag.requested:
+            slice_seconds = min(
+                INTERRUPTIBLE_SLEEP_SLICE_SECONDS, chunk - slept
+            )
+            sleep_fn(slice_seconds)
+            slept += slice_seconds
 
 
 def run_broadcast_follow(
@@ -159,6 +173,7 @@ def run_broadcast_follow(
     rng: Optional[random.Random] = None,
     on_results: Optional[Callable[[list[BroadcastResult]], None]] = None,
     on_heartbeat: Optional[Callable[[str], None]] = None,
+    on_shutdown_request: Callable[[], None] | None = None,
     shutdown_flag: Optional[ShutdownFlag] = None,
     now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -166,12 +181,12 @@ def run_broadcast_follow(
     """Replace an hourly cron with a single sleeping process.
 
     Each iteration calls `run_broadcast_due(max_count=1)` — identical
-    single-shot logic to a cron invocation — then sleeps (in <=60s chunks)
-    until the next entry is actually worth checking. Install a
-    `shutdown_flag` for tests; production callers get SIGINT/SIGTERM wired
-    up automatically.
+    single-shot logic to a cron invocation — then sleeps (in <=60s chunks,
+    each split into ~1s interruptible slices) until the next entry is
+    actually worth checking. Install a `shutdown_flag` for tests;
+    production callers get SIGINT/SIGTERM wired up automatically.
     """
-    flag = shutdown_flag or ShutdownFlag()
+    flag = shutdown_flag or ShutdownFlag(on_request=on_shutdown_request)
     if shutdown_flag is None:
         install_signal_handlers(flag)
 

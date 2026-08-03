@@ -549,6 +549,13 @@ def broadcast_due(
         typer.echo(
             "Running in --follow mode. Sleeping between checks; press Ctrl-C to stop."
         )
+        shutdown_requested = False
+
+        def _on_shutdown_request() -> None:
+            nonlocal shutdown_requested
+            shutdown_requested = True
+            typer.echo("\nStopping (interrupt received)...", err=True)
+
         try:
             run_broadcast_follow(
                 output,
@@ -559,12 +566,16 @@ def broadcast_due(
                 respect_quiet_hours=respect_quiet_hours,
                 on_results=_print_broadcast_results,
                 on_heartbeat=lambda msg: typer.echo(msg, err=True),
+                on_shutdown_request=_on_shutdown_request,
             )
         except ValueError as e:
             typer.echo(f"ERROR: {e}", err=True)
             raise typer.Exit(1) from e
         except KeyboardInterrupt:
-            typer.echo("\nStopped.")
+            typer.echo("\nStopped.", err=True)
+            return
+        if shutdown_requested:
+            typer.echo("Stopped.", err=True)
         return
 
     try:

@@ -10,8 +10,10 @@ import yaml
 
 from coldcard_panic_drain.broadcast.follow import (
     DEFAULT_POLL_INTERVAL,
+    INTERRUPTIBLE_SLEEP_SLICE_SECONDS,
     MAX_SLEEP_CHUNK_SECONDS,
     ShutdownFlag,
+    _sleep_until,
     compute_next_broadcast_wake,
     format_follow_heartbeat,
     run_broadcast_follow,
@@ -302,3 +304,66 @@ def test_run_broadcast_follow_forwards_results_to_on_results(tmp_path: Path, mon
         on_results=seen.append,
     )
     assert seen == [["fake-result"]]
+
+
+def test_sleep_until_exits_within_one_slice_after_shutdown_flag():
+    wake = datetime(2026, 1, 1, 1, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    flag = ShutdownFlag()
+    sleep_calls: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        if len(sleep_calls) == 2:
+            flag.request()
+
+    _sleep_until(
+        wake,
+        now_fn=lambda: now,
+        sleep_fn=fake_sleep,
+        flag=flag,
+    )
+
+    assert len(sleep_calls) == 2
+    assert all(s <= INTERRUPTIBLE_SLEEP_SLICE_SECONDS for s in sleep_calls)
+    assert flag.requested
+
+
+def test_shutdown_flag_on_request_called_once():
+    calls = {"n": 0}
+    flag = ShutdownFlag(on_request=lambda: calls.__setitem__("n", calls["n"] + 1))
+    flag.request()
+    flag.request()
+    assert calls["n"] == 1
+
+
+def test_run_broadcast_follow_calls_on_shutdown_request(tmp_path: Path, monkeypatch):
+    calls: list[int] = []
+    captured: dict[str, ShutdownFlag] = {}
+
+    monkeypatch.setattr(
+        "coldcard_panic_drain.broadcast.follow.run_broadcast_due",
+        lambda output_dir, rpc, **kwargs: [],
+    )
+
+    def capture_handlers(flag: ShutdownFlag) -> None:
+        captured["flag"] = flag
+
+    monkeypatch.setattr(
+        "coldcard_panic_drain.broadcast.follow.install_signal_handlers",
+        capture_handlers,
+    )
+
+    def fake_sleep(_seconds: float) -> None:
+        captured["flag"].request()
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    run_broadcast_follow(
+        tmp_path,
+        MagicMock(),
+        now_fn=lambda: now,
+        sleep_fn=fake_sleep,
+        on_shutdown_request=lambda: calls.append(1),
+    )
+
+    assert calls == [1]
