@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from coldcard_panic_drain.plan.session import DrainSession
-from coldcard_panic_drain.verify.mapping import MAPPING_ACK, OPTIONS_ACK, confirm_mapping_review
+from coldcard_panic_drain.verify.mapping import MAPPING_ACK, confirm_mapping_review
 
 
 def test_confirm_mapping_review_accepts_proceed():
@@ -16,7 +16,6 @@ def test_confirm_mapping_review_accepts_proceed():
     confirm_mapping_review(3, stdin=stdin, stdout=stdout)
     assert "3 PSBTs" in stdout.getvalue()
     assert "Wallet A" in stdout.getvalue()
-    assert OPTIONS_ACK in stdout.getvalue()
 
 
 def test_confirm_mapping_review_retries_on_typo():

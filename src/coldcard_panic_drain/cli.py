@@ -65,7 +65,7 @@ FEE_BASE_HELP = (
 )
 FEE_JITTER_HELP = (
     "Random ± fraction applied per UTXO at plan time so each PSBT gets a slightly "
-    "different absolute fee: fee_sats = max(140, round(fee_base * 140 * (1 + "
+    "different absolute fee: fee_sats = max(140, round(max(1, fee_base) * 140 * (1 + "
     "uniform(-jitter, +jitter)))). The 140-sat floor is 1 sat/vB minimum. At low "
     "fee-base, when the floor would absorb the lower tail, fees are drawn uniformly "
     "from 140 sats up to the jittered maximum instead. "

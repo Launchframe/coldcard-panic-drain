@@ -25,8 +25,7 @@ def confirm_mapping_review(
     while True:
         if retry:
             stdout.write(
-                f"\nNot recognized. Type {MAPPING_ACK} to save, {OPTIONS_ACK} to adjust "
-                "fees or display, or exit/q to abort: "
+                f"\nNot recognized. Type {MAPPING_ACK} to save, or exit/q to abort: "
             )
         else:
             stdout.write(
@@ -38,8 +37,7 @@ def confirm_mapping_review(
                 "each transaction, verify the destination address on the device and confirm "
                 "it appears as a receive address in Sparrow Wallet B.\n"
                 f"({assignment_count} PSBTs will be generated.)\n\n"
-                f"Type {MAPPING_ACK} to save this mapping, {OPTIONS_ACK} to adjust fees "
-                "or display, exit/q to abort, or Ctrl+C to abort: "
+                f"Type {MAPPING_ACK} to save this mapping, exit/q to abort, or Ctrl+C to abort: "
             )
         stdout.flush()
         line = stdin.readline().strip()

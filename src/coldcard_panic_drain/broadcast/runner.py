@@ -58,7 +58,8 @@ def run_broadcast_due(
 ) -> list[BroadcastResult]:
     sched_path = output_dir / "schedule.yaml"
     doc = load_schedule(sched_path)
-    ensure_signed_psbt_dir_ready(output_dir)
+    if not dry_run:
+        ensure_signed_psbt_dir_ready(output_dir)
     now = datetime.now(timezone.utc)
     state = BroadcastState.load(state_path(output_dir))
     results: list[BroadcastResult] = []

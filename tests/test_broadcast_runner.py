@@ -59,6 +59,14 @@ def test_run_broadcast_due_requires_nonempty_psbts_signed_dir(tmp_path: Path):
         run_broadcast_due(tmp_path, MagicMock(), max_count=1)
 
 
+def test_run_broadcast_due_dry_run_skips_signed_dir_check(tmp_path: Path):
+    _write_schedule(tmp_path, "psbts_signed/coin-signed.psbt")
+    results = run_broadcast_due(tmp_path, MagicMock(), max_count=1, dry_run=True)
+    assert len(results) == 1
+    assert results[0].action == "skipped"
+    assert "missing" in results[0].detail
+
+
 def test_rejects_signed_path_outside_output_dir(tmp_path: Path):
     _write_schedule(tmp_path, "../../../etc/passwd")
     _seed_signed_dir(tmp_path)

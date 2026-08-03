@@ -31,7 +31,11 @@ from coldcard_panic_drain.plan.mapper import (
 from coldcard_panic_drain.plan.session import DrainSession, session_path
 from coldcard_panic_drain.psbt.builder import build_psbt, write_psbt_bundle
 from coldcard_panic_drain.sparrow.models import UtxoRecord
-from coldcard_panic_drain.util import derive_address_for_chain_index, parse_bip32_path
+from coldcard_panic_drain.util import (
+    derive_address_for_chain_index,
+    full_bip32_path_ints,
+    parse_bip32_path,
+)
 
 from conftest import TEST_FP, TEST_XPUB, make_test_wallet, make_test_wallet_b
 
@@ -73,6 +77,16 @@ def test_derive_address_at_path_matches_chain_index_helper():
         expected = derive_address_for_chain_index(w.keystore, chain, idx)
         got = derive_address_at_path(w, f"m/84'/0'/0'/{chain}/{idx}")
         assert got == expected
+
+
+def test_full_bip32_path_ints_expands_sparrow_relative_path():
+    account = "m/84'/0'/0'"
+    assert full_bip32_path_ints(account, "m/0/31") == parse_bip32_path("m/84'/0'/0'/0/31")
+
+
+def test_full_bip32_path_ints_keeps_absolute_node_path():
+    full = "m/84'/0'/0'/1/6"
+    assert full_bip32_path_ints("m/84'/0'/0'", full) == parse_bip32_path(full)
 
 
 def test_parse_bip32_path_hardened_and_plain():

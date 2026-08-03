@@ -9,14 +9,10 @@ from embit import bip32, script
 from embit.psbt import PSBT, DerivationPath
 from embit.transaction import Transaction, TransactionInput, TransactionOutput
 
-from coldcard_panic_drain.psbt.fees import (
-    VBYTES_1IN_1OUT,
-    assignment_fee_sats,
-    estimate_psbt_fee_sats,
-)
+from coldcard_panic_drain.psbt.fees import assignment_fee_sats
 from coldcard_panic_drain.plan.mapper import validate_dest_address, validate_source_utxo
 from coldcard_panic_drain.sparrow.models import DestinationAssignment, WalletSnapshot
-from coldcard_panic_drain.util import full_bip32_path_ints, parse_bip32_path
+from coldcard_panic_drain.util import full_bip32_path_ints
 
 
 def _txid_bytes_le(txid_hex: str) -> bytes:
