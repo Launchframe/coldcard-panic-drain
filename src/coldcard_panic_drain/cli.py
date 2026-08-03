@@ -538,6 +538,11 @@ def broadcast_due(
         raise typer.Exit(1) from e
 
     if follow:
+        if max_count != 1:
+            typer.echo(
+                "Note: --follow broadcasts one entry per wake; --max-count is ignored.",
+                err=True,
+            )
         typer.echo(
             "Running in --follow mode. Sleeping between checks; press Ctrl-C to stop."
         )
