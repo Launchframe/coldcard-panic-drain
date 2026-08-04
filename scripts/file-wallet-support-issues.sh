@@ -15,7 +15,8 @@ if ! command -v gh >/dev/null 2>&1; then
 fi
 
 # Optional label; create if missing (ignore failure if no label permission).
-gh label create wallet-support --description "Wallet format / import expansion" --color "1D76DB" 2>/dev/null || true
+gh label create wallet-support --repo "$REPO" \
+  --description "Wallet format / import expansion" --color "1D76DB" 2>/dev/null || true
 
 file_issue() {
   local spec="$1"

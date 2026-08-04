@@ -8,7 +8,7 @@ Many operators use [Electrum](https://electrum.org/) instead of Sparrow. The CLI
 
 ## Goal
 
-Read Electrum wallet files offline and produce the same [`WalletSnapshot`](../../src/coldcard_panic_drain/sparrow/models.py) contract as Sparrow, starting with **single-sig BIP84 native segwit** (`bc1q`).
+Read Electrum wallet files offline and produce the same [`WalletSnapshot`](../../src/coldcard_panic_drain/sparrow/models.py) contract as Sparrow, starting with **single-sig BIP84 native segwit (P2WPKH)**.
 
 ## Step 0 — Wallet file survey (blocking)
 

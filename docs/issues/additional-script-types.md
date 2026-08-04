@@ -4,17 +4,17 @@
 
 ## Problem
 
-Sparrow and other wallets support multiple script types. Today [`h2_reader.py`](../../src/coldcard_panic_drain/sparrow/h2_reader.py) rejects anything except `SCRIPT_TYPE_P2WPKH` (native segwit / `bc1q`). Operators with BIP49 (`bc1…` wrapped in P2SH) or legacy wallets cannot drain without converting wallets first.
+Sparrow and other wallets support multiple script types. Today [`h2_reader.py`](../../src/coldcard_panic_drain/sparrow/h2_reader.py) rejects anything except `SCRIPT_TYPE_P2WPKH` (native segwit P2WPKH). Operators with BIP49 P2SH-wrapped segwit or BIP44 legacy wallets cannot drain without converting wallets first.
 
 ## Goal
 
 Extend wallet read, PSBT build, fee estimation, and address validation to support additional **single-sig** script types commonly used with Coldcard, in priority order:
 
-| Priority | Script | BIP | Address prefix | Sparrow `scriptType` ordinal |
-|----------|--------|-----|----------------|------------------------------|
-| P0 | P2WPKH | BIP84 | `bc1q` | 6 (done) |
-| P1 | P2SH-P2WPKH | BIP49 | `3…` | 4 |
-| P2 | P2PKH | BIP44 | `1…` | 1 (evaluate demand) |
+| Priority | Script | BIP | Address encoding | Sparrow `scriptType` ordinal |
+|----------|--------|-----|------------------|------------------------------|
+| P0 | P2WPKH | BIP84 | native segwit v0 (P2WPKH) | 6 (done) |
+| P1 | P2SH-P2WPKH | BIP49 | P2SH-wrapped segwit | 4 |
+| P2 | P2PKH | BIP44 | legacy P2PKH | 1 (evaluate demand) |
 
 ## Scope
 
@@ -30,7 +30,7 @@ Extend wallet read, PSBT build, fee estimation, and address validation to suppor
 
 ### Out of scope (see multisig issue)
 
-- `sortedmulti`, miniscript, taproot (`bc1p`), P2WSH
+- `sortedmulti`, miniscript, taproot v1 (P2TR), P2WSH singlesig
 
 ## Implementation notes
 
