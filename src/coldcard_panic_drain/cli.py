@@ -511,7 +511,7 @@ def broadcast_due(
     max_count: int = typer.Option(
         1,
         "--max-count",
-        help="Broadcast at most this many due entries per invocation (or per --follow wake).",
+        help="Broadcast at most this many due entries per invocation (--ignored with --follow).",
     ),
     dry_run: bool = typer.Option(False, "--dry-run"),
     skip_failed: bool = typer.Option(False, "--skip-failed"),

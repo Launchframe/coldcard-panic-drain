@@ -47,6 +47,84 @@ def _parse_not_before(value: str) -> datetime:
     return dt
 
 
+def _parse_broadcast_at(value: str) -> datetime:
+    dt = datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _scheduled_gap_after_previous(
+    entries: list[dict], order: int
+) -> Optional[timedelta]:
+    """Planned spacing between `order` and the previous schedule entry."""
+    by_order = {int(e["order"]): e for e in entries}
+    if order <= 1 or order not in by_order or (order - 1) not in by_order:
+        return None
+    cur = _parse_not_before(by_order[order]["broadcast_not_before"])
+    prev = _parse_not_before(by_order[order - 1]["broadcast_not_before"])
+    return cur - prev
+
+
+def _last_prior_broadcast_at(state: BroadcastState, order: int) -> Optional[datetime]:
+    """Most recent `broadcast_at` among already-broadcast entries before `order`."""
+    latest: Optional[datetime] = None
+    for prior_order in range(1, order):
+        entry = state.get(prior_order)
+        if entry.get("status") != "broadcast":
+            continue
+        raw = entry.get("broadcast_at")
+        if not raw:
+            continue
+        dt = _parse_broadcast_at(raw)
+        if latest is None or dt > latest:
+            latest = dt
+    return latest
+
+
+def _catch_up_ready_floor(
+    order: int,
+    entries: list[dict],
+    state: BroadcastState,
+) -> Optional[datetime]:
+    """Earliest allowed send when catching up on a backlog.
+
+    When several entries are overdue, honor the relative spacing from
+    schedule.yaml instead of firing them back-to-back. Uses the most recent
+    prior broadcast time plus the scheduled gap to the current entry.
+    """
+    gap = _scheduled_gap_after_previous(entries, order)
+    prior_broadcast = _last_prior_broadcast_at(state, order)
+    if gap is None or prior_broadcast is None:
+        return None
+    return prior_broadcast + gap
+
+
+def _resolve_ready_at(
+    order: int,
+    not_before: datetime,
+    entries: list[dict],
+    state: BroadcastState,
+    rng: random.Random,
+    broadcast_jitter_minutes: int,
+) -> datetime:
+    """Runtime send time: schedule jitter plus backlog catch-up floor."""
+    existing = state.get_ready_at(order)
+    if broadcast_jitter_minutes > 0:
+        if existing is None:
+            offset = timedelta(minutes=rng.uniform(0, broadcast_jitter_minutes))
+            ready = not_before + offset
+        else:
+            ready = existing
+    else:
+        ready = existing or not_before
+
+    floor = _catch_up_ready_floor(order, entries, state)
+    if floor is not None and floor > ready:
+        ready = floor
+    return ready
+
+
 def _signed_tx_hex(signed_psbt_path: Path) -> tuple[str, str]:
     psbt = PSBT.parse(signed_psbt_path.read_bytes())
     tx = finalize_psbt(psbt)
@@ -70,6 +148,7 @@ def run_broadcast_due(
 ) -> list[BroadcastResult]:
     sched_path = output_dir / "schedule.yaml"
     doc = load_schedule(sched_path)
+    schedule_entries = doc.get("entries") or []
     now = datetime.now(timezone.utc)
     state = BroadcastState.load(state_path(output_dir))
     rng = rng or random.Random()
@@ -78,7 +157,7 @@ def run_broadcast_due(
     sent = 0
     signed_dir_checked = dry_run
 
-    for entry in sorted(doc.get("entries") or [], key=lambda e: e.get("order", 0)):
+    for entry in sorted(schedule_entries, key=lambda e: e.get("order", 0)):
         if sent >= max_count:
             break
         order = int(entry["order"])
@@ -113,18 +192,26 @@ def run_broadcast_due(
             )
             continue
 
-        if broadcast_jitter_minutes > 0:
-            ready_at = state.get_ready_at(order)
-            if ready_at is None:
-                offset = timedelta(minutes=rng.uniform(0, broadcast_jitter_minutes))
-                ready_at = not_before + offset
-                state.set_ready_at(order, ready_at)
-                state.save_atomic(state_path(output_dir))
-            if now < ready_at:
-                results.append(
-                    BroadcastResult(order, label, "skipped", detail="broadcast jitter window")
-                )
-                continue
+        ready_at = _resolve_ready_at(
+            order,
+            not_before,
+            schedule_entries,
+            state,
+            rng,
+            broadcast_jitter_minutes,
+        )
+        persisted_ready = state.get_ready_at(order)
+        if persisted_ready != ready_at and (
+            broadcast_jitter_minutes > 0
+            or (persisted_ready is not None and ready_at > persisted_ready)
+        ):
+            state.set_ready_at(order, ready_at)
+            state.save_atomic(state_path(output_dir))
+        if now < ready_at:
+            results.append(
+                BroadcastResult(order, label, "skipped", detail="broadcast jitter window")
+            )
+            continue
 
         if quiet_hours is not None and in_quiet_hours(now, quiet_hours):
             results.append(BroadcastResult(order, label, "skipped", detail="quiet hours"))

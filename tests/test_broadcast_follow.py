@@ -185,6 +185,37 @@ def test_compute_next_wake_falls_back_when_due_but_blocked(tmp_path: Path):
     assert compute_next_broadcast_wake(tmp_path, now) == now + DEFAULT_POLL_INTERVAL
 
 
+def test_compute_next_wake_uses_future_ready_at_for_backlog_entry(tmp_path: Path):
+    now = datetime(2026, 8, 4, 2, 43, 24, tzinfo=timezone.utc)
+    order6_not_before = datetime(2026, 8, 4, 1, 30, 0, tzinfo=timezone.utc)
+    order7_not_before = datetime(2026, 8, 4, 2, 30, 0, tzinfo=timezone.utc)
+    _write_schedule(
+        tmp_path,
+        [
+            {
+                "order": 6,
+                "label": "coin-6",
+                "signed": "psbts_signed/coin-6-signed.psbt",
+                "broadcast_not_before": order6_not_before.isoformat(),
+            },
+            {
+                "order": 7,
+                "label": "coin-7",
+                "signed": "psbts_signed/coin-7-signed.psbt",
+                "broadcast_not_before": order7_not_before.isoformat(),
+            },
+        ],
+    )
+    prior_broadcast = datetime(2026, 8, 4, 2, 42, 32, tzinfo=timezone.utc)
+    ready_at = prior_broadcast + timedelta(hours=1)
+    state = BroadcastState()
+    state.mark_broadcast(6, "bb" * 32)
+    state.set_ready_at(7, ready_at)
+    state.save_atomic(state_path(tmp_path))
+
+    assert compute_next_broadcast_wake(tmp_path, now) == ready_at
+
+
 def test_compute_next_wake_ignores_already_broadcast_entries(tmp_path: Path):
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     not_before = now + timedelta(hours=1)
