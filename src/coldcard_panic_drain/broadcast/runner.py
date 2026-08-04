@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -13,7 +14,15 @@ from embit.psbt import PSBT
 from coldcard_panic_drain.broadcast.core_rpc import CoreRpcClient, CoreRpcError
 from coldcard_panic_drain.broadcast.paths import ensure_signed_psbt_dir_ready, signed_path_under_output
 from coldcard_panic_drain.broadcast.state import BroadcastState, state_path
-from coldcard_panic_drain.schedule.load import load_schedule
+from coldcard_panic_drain.schedule.load import load_schedule, schedule_quiet_hours
+from coldcard_panic_drain.schedule.quiet_hours import in_quiet_hours
+
+# Default width (minutes) of the runtime broadcast jitter window: once an entry's
+# broadcast_not_before has passed and its signed PSBT is present, the actual send
+# is delayed by a further uniform(0, jitter) draw so a --follow/cron watcher does
+# not fire the instant each entry becomes due (see docs/FEE-SPIKE-RECOVERY.md and
+# README.md §9 for why fixed-cadence auto-broadcast is fingerprintable).
+DEFAULT_BROADCAST_JITTER_MINUTES = 90
 
 FEE_URGENCY_BANNER = (
     "WARNING: You are racing an attacker with access to the compromised seed. "
@@ -55,15 +64,19 @@ def run_broadcast_due(
     max_count: int = 1,
     dry_run: bool = False,
     skip_failed: bool = False,
+    broadcast_jitter_minutes: int = DEFAULT_BROADCAST_JITTER_MINUTES,
+    respect_quiet_hours: bool = False,
+    rng: Optional[random.Random] = None,
 ) -> list[BroadcastResult]:
     sched_path = output_dir / "schedule.yaml"
     doc = load_schedule(sched_path)
-    if not dry_run:
-        ensure_signed_psbt_dir_ready(output_dir)
     now = datetime.now(timezone.utc)
     state = BroadcastState.load(state_path(output_dir))
+    rng = rng or random.Random()
+    quiet_hours = schedule_quiet_hours(doc) if respect_quiet_hours else None
     results: list[BroadcastResult] = []
     sent = 0
+    signed_dir_checked = dry_run
 
     for entry in sorted(doc.get("entries") or [], key=lambda e: e.get("order", 0)):
         if sent >= max_count:
@@ -82,6 +95,10 @@ def run_broadcast_due(
         if now < not_before:
             continue
 
+        if not signed_dir_checked:
+            ensure_signed_psbt_dir_ready(output_dir)
+            signed_dir_checked = True
+
         signed_rel = entry.get("signed", "")
         try:
             signed_path = signed_path_under_output(output_dir, signed_rel)
@@ -94,6 +111,23 @@ def run_broadcast_due(
             results.append(
                 BroadcastResult(order, label, "skipped", detail="signed PSBT missing")
             )
+            continue
+
+        if broadcast_jitter_minutes > 0:
+            ready_at = state.get_ready_at(order)
+            if ready_at is None:
+                offset = timedelta(minutes=rng.uniform(0, broadcast_jitter_minutes))
+                ready_at = not_before + offset
+                state.set_ready_at(order, ready_at)
+                state.save_atomic(state_path(output_dir))
+            if now < ready_at:
+                results.append(
+                    BroadcastResult(order, label, "skipped", detail="broadcast jitter window")
+                )
+                continue
+
+        if quiet_hours is not None and in_quiet_hours(now, quiet_hours):
+            results.append(BroadcastResult(order, label, "skipped", detail="quiet hours"))
             continue
 
         try:

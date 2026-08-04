@@ -4,7 +4,7 @@ Fees are **fixed when you run `generate`**. The broadcast schedule only controls
 
 ## Use competitive fees (especially with auto-broadcast)
 
-You are racing an attacker who may know the compromised seed. If you use `broadcast-due` cron or a multi-day `spread_hours` window:
+You are racing an attacker who may know the compromised seed. If you use `broadcast-due --follow`, cron, or a multi-day `spread_hours` window:
 
 - Set `--fee-base` **above** current priority at `plan` time.
 - Plan for the **worst** fee environment over the whole spread, not day-one conditions.
@@ -12,7 +12,10 @@ You are racing an attacker who may know the compromised seed. If you use `broadc
 
 ## Mid-drain fee spike — replan remaining UTXOs
 
-1. **Pause** `broadcast-due` cron (or stop manual broadcasts).
+1. **Pause** the auto-broadcaster before touching anything else:
+   - `--follow`: `Ctrl-C` (or `SIGTERM`) the process — it shuts down gracefully between checks.
+   - cron: comment out or remove the `broadcast-due` crontab entry.
+   - Either way, stop manual broadcasts too until you finish replanning.
 2. **Sync Wallet A** in Sparrow; note which UTXOs already confirmed.
 3. **Re-copy** fresh Wallet A and Wallet B `.mv.db` files.
 4. **Do not broadcast** old signed PSBTs for UTXOs you will regenerate — they carry the old fee. If already in mempool, RBF in Sparrow or wait for eviction.

@@ -26,6 +26,7 @@ class DrainSession:
     fee_jitter: float
     min_blocks_apart: int
     spread_hours: float
+    schedule_jitter: float = 0.35
     utxos: list[dict[str, Any]] = field(default_factory=list)
     assignments: list[dict[str, Any]] = field(default_factory=list)
     mapping_confirmed: bool = False
@@ -53,6 +54,7 @@ class DrainSession:
         quiet_hours_end: Optional[str] = None,
         quiet_hours_timezone: Optional[str] = None,
         calendar_alarm_minutes: int = 15,
+        schedule_jitter: float = 0.35,
     ) -> "DrainSession":
         return cls(
             source_path=source.path,
@@ -62,6 +64,7 @@ class DrainSession:
             fee_jitter=fee_jitter,
             min_blocks_apart=min_blocks_apart,
             spread_hours=spread_hours,
+            schedule_jitter=schedule_jitter,
             utxos=[_utxo_to_dict(u) for u in source.utxos],
             dest_xpub=dest.keystore.xpub,
             dest_fingerprint=dest.keystore.fingerprint,
@@ -83,6 +86,7 @@ class DrainSession:
         data.setdefault("quiet_hours_end", None)
         data.setdefault("quiet_hours_timezone", None)
         data.setdefault("calendar_alarm_minutes", 15)
+        data.setdefault("schedule_jitter", 0.35)
         if "mapping_confirmed" not in data and "addresses_confirmed" in data:
             data["mapping_confirmed"] = data["addresses_confirmed"]
         data.pop("addresses_confirmed", None)

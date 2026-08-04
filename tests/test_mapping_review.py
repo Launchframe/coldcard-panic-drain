@@ -32,6 +32,15 @@ def test_confirm_mapping_review_exits_on_q():
         confirm_mapping_review(1, stdin=stdin, stdout=stdout)
 
 
+def test_confirm_mapping_review_aborts_on_eof_instead_of_looping_forever():
+    # readline() on exhausted/closed stdin returns "" forever; must not be
+    # treated as an infinite series of "not recognized" retries.
+    stdin = io.StringIO("")
+    stdout = io.StringIO()
+    with pytest.raises(ValueError, match="mapping not confirmed"):
+        confirm_mapping_review(1, stdin=stdin, stdout=stdout)
+
+
 def test_require_plan_gates_rejects_missing_mapping():
     session = DrainSession(
         source_path="/tmp/a.mv.db",

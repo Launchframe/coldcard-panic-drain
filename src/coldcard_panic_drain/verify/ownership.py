@@ -74,7 +74,15 @@ def confirm_dest_wallet_ownership(
             retry=retry,
         )
         stdout.flush()
-        line = stdin.readline().strip()
+        raw = stdin.readline()
+        if raw == "":
+            # EOF (closed/exhausted stdin) — never treat as "just retry" or the
+            # loop would spin forever re-printing the prompt with no way for a
+            # non-interactive caller to make progress.
+            raise ValueError(
+                "Aborted: destination wallet ownership not confirmed (no input received)."
+            )
+        line = raw.strip()
         if line == OWNERSHIP_ACK:
             return index
         if line.lower() in _OWNERSHIP_EXIT:

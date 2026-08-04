@@ -37,6 +37,7 @@ coldcard-panic-drain plan \
   --fee-jitter 0.15 \
   --min-blocks-apart 2 \
   --spread-hours 48 \
+  --schedule-jitter 0.35 \
   --dnd-start 22:00 \
   --dnd-end 08:00 \
   --timezone America/New_York
@@ -50,6 +51,7 @@ coldcard-panic-drain plan \
 - Type `OPTIONS` at the same prompt to change fees, display unit (`btc`/`sats`), or redraw the table before confirming.
 - **`--display`** (`btc` or `sats`, default `btc`) sets amount units in the mapping table; override interactively via `OPTIONS`.
 - **`--fee-base`** (sat/vB, integer) and **`--fee-jitter`** (± fraction) set each PSBT's fee rate at plan time. See [FAQS.md](FAQS.md#fees-fee-base-and-fee-jitter).
+- **`--schedule-jitter`** (± fraction of each entry's spacing, default `0.35`) offsets each `schedule.yaml` `broadcast_not_before` so entries don't land on an exact fixed cadence. Entries stay at least 15 minutes apart and quiet hours are re-applied after jitter. See [FAQS.md](FAQS.md#broadcast-cadence-auto-broadcast-jitter-and-follow-mode).
 
 ### 3. Generate outputs
 
@@ -113,13 +115,65 @@ Use competitive `--fee-base` at plan time — you are racing the attacker. See [
 
 Point `--rpc-url` at Core on the same machine (`http://127.0.0.1:8332`) or a LAN node via mDNS (`https://happy-feet.local:8332`). Bare IP addresses like `http://192.168.1.50:8332` are rejected — use a `*.local` hostname instead.
 
+**Primary: `--follow` (recommended).** Run one long-lived watcher instead of a cron entry:
+
 ```bash
-# Hourly cron — ignores quiet hours; may broadcast overnight
+coldcard-panic-drain broadcast-due -o /path/to/batch \
+  --rpc-url https://happy-feet.local:8332 \
+  --follow
+```
+
+- Sleeps in chunks of at most 60 seconds; wakes early only when an entry is actually due (or every 60s as a bounded fallback while blocked on signing/quiet hours). No busy loop.
+- **CPU load: negligible.** It is a sleeping process that wakes at most once a minute to check `schedule.yaml`/`broadcast-state.yaml`, with a brief RPC call only on the iteration something actually broadcasts. Typical idle CPU is well under 0.1%; there is no polling loop spinning between wakeups.
+- Stop with `Ctrl-C` (SIGINT) or `SIGTERM` — acknowledged immediately; the loop exits within ~1 second (after finishing the current check if one is in progress).
+- Emits timestamped heartbeats to **stderr** after each check and about every 60 seconds while waiting, so a long-running watcher proves it is alive.
+- Each wake internally calls the same single-shot `run_broadcast_due(max_count=1)` logic a cron entry would use, so behavior (jitter, quiet hours, safety checks) is identical either way.
+
+**Cadence flags** (apply in both `--follow` and single-shot mode):
+
+- **`--broadcast-jitter-minutes`** (default `90`, `0` disables): once an entry is due (`broadcast_not_before` has passed) and its signed PSBT is present, delay the actual send by a further `uniform(0, jitter)` minutes. Drawn once per entry and persisted in `broadcast-state.yaml` — re-running `broadcast-due` (or a fresh `--follow` process) does not re-roll it.
+- **`--respect-quiet-hours`** (default off): skip broadcasting while inside the quiet-hours window recorded in `schedule.yaml` (from `plan --dnd-start/--dnd-end/--timezone`). Off by default because `broadcast-due` is meant to be unattended; quiet hours otherwise only affect calendar reminders and `remind`.
+
+See [FAQS.md](FAQS.md#broadcast-cadence-auto-broadcast-jitter-and-follow-mode) for why fixed-cadence auto-broadcast (an exact hourly cron with no jitter) is worth avoiding.
+
+**Alternative: cron**, if you'd rather not run a long-lived process:
+
+```bash
+# Hourly cron — ignores quiet hours by default; may broadcast overnight
 0 * * * * coldcard-panic-drain broadcast-due -o /path/to/batch --max-count 1 \
   --rpc-url https://happy-feet.local:8332
 ```
 
-`broadcast-state.yaml` tracks completed broadcasts and survives reboots.
+Each invocation is a single `run_broadcast_due(max_count=1)` pass — the same logic `--follow` uses per wake — so `--broadcast-jitter-minutes` and `--respect-quiet-hours` work identically here.
+
+`broadcast-state.yaml` tracks completed broadcasts (and any pending jitter draw) and survives reboots.
+
+### 10. Reschedule broadcast timing (optional)
+
+If you've already run `generate` and signed some or all PSBTs but want different broadcast timing — e.g. spread it out further, or shift it later — use `reschedule` instead of re-running `plan`/`generate`. It only rewrites `broadcast_not_before` in `schedule.yaml` for entries that haven't broadcast yet (per `broadcast-state.yaml`); PSBTs, labels, and fees are untouched, so already-signed PSBTs stay valid.
+
+```bash
+coldcard-panic-drain reschedule -o /Volumes/MICROSD/panic-batch-001 \
+  --spread-hours 72 \
+  --dry-run
+```
+
+Review the printed table (order, label, old time, new time — no addresses), then drop `--dry-run` to write the change:
+
+```bash
+coldcard-panic-drain reschedule -o /Volumes/MICROSD/panic-batch-001 \
+  --spread-hours 72 \
+  --update-calendar
+```
+
+- Already-`broadcast` entries keep their original `broadcast_not_before` — reschedule never touches them.
+- `failed` entries (e.g. a prior `broadcast-due` rejection) are rescheduled along with pending ones, in case you want to retry with new timing; their `failed` status itself is not cleared.
+- `--schedule-jitter` defaults to whatever is already in `schedule.yaml` (falls back to `0.35` if absent) — pass a value to change it.
+- `--shuffle-pending` reshuffles which pending entry lands in which new time slot before assigning times; entry `order` numbers and labels don't change, only which pending entry gets which new timestamp.
+- Any pending runtime-jitter draw (`ready_at` in `broadcast-state.yaml`, see `--broadcast-jitter-minutes` above) for a rescheduled entry is cleared so `broadcast-due` re-draws it against the new time.
+- `--update-calendar` regenerates `reminders.ics` from the updated schedule (same as `export-calendar`).
+
+See [FAQS.md](FAQS.md#reschedule-vs-re-plan) for when to use `reschedule` vs. re-running `plan`.
 
 ## Reuse (Wallet B → Wallet C)
 

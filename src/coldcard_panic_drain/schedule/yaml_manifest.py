@@ -9,13 +9,12 @@ from typing import Iterable, Optional
 
 import yaml
 
-from coldcard_panic_drain.schedule.quiet_hours import (
-    QuietHours,
-    next_allowed_time,
-    quiet_hours_to_dict,
-)
+from coldcard_panic_drain.schedule.quiet_hours import QuietHours, quiet_hours_to_dict
+from coldcard_panic_drain.schedule.timing import MIN_ENTRY_GAP, assign_broadcast_times
 from coldcard_panic_drain.broadcast.paths import signed_psbt_relpath
 from coldcard_panic_drain.sparrow.models import DestinationAssignment
+
+__all__ = ["MIN_ENTRY_GAP", "write_schedule"]
 
 
 def write_schedule(
@@ -23,6 +22,7 @@ def write_schedule(
     assignments: Iterable[DestinationAssignment],
     *,
     spread_hours: float,
+    schedule_jitter: float = 0.35,
     quiet_hours: Optional[QuietHours] = None,
     rng: random.Random | None = None,
 ) -> list[dict]:
@@ -43,17 +43,17 @@ def write_schedule(
         ordered.extend(g)
 
     now = datetime.now(timezone.utc)
-    step = timedelta(hours=spread_hours / max(len(ordered), 1))
+    times = assign_broadcast_times(
+        len(ordered),
+        spread_hours=spread_hours,
+        schedule_jitter=schedule_jitter,
+        quiet_hours=quiet_hours,
+        start=now,
+        rng=rng,
+    )
     entries: list[dict] = []
-    last_assigned: Optional[datetime] = None
 
-    for i, a in enumerate(ordered):
-        t = now + step * i
-        if quiet_hours is not None:
-            t = next_allowed_time(t, quiet_hours)
-            if last_assigned is not None and t <= last_assigned:
-                t = next_allowed_time(last_assigned + step, quiet_hours)
-        last_assigned = t
+    for i, (a, t) in enumerate(zip(ordered, times)):
         entries.append(
             {
                 "order": i + 1,
@@ -70,6 +70,7 @@ def write_schedule(
     doc: dict = {
         "generated_at": now.isoformat(),
         "spread_hours": spread_hours,
+        "schedule_jitter": schedule_jitter,
         "entries": entries,
     }
     qh_doc = quiet_hours_to_dict(quiet_hours)
