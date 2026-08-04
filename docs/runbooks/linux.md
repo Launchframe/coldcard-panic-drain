@@ -8,33 +8,46 @@ Preferred for airgapped machines (x86_64 and arm64).
 
 ```bash
 sudo apt update
-sudo apt install python3.12 python3.12-venv default-jre
+sudo apt install python3 python3-venv default-jre
 # or: sudo apt install openjdk-17-jre-headless
+```
+
+Need Python ≥ 3.11. On Ubuntu 22.04+ / recent Debian, distro `python3` is usually enough.
+On older Ubuntu (e.g. 20.04) where default `python3` is below 3.11, install 3.12 from
+[deadsnakes](https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa):
+
+```bash
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.12 python3.12-venv
 ```
 
 ### Fedora
 
 ```bash
-sudo dnf install python3.12 java-17-openjdk
+sudo dnf install python3 java-17-openjdk
 ```
 
 Confirm:
 
 ```bash
-python3.12 --version   # ≥ 3.11
-java -version          # 11+
+python3 --version   # must be ≥ 3.11
+java -version       # 11+
 ```
 
 ## Project setup
 
 ```bash
 cd coldcard-panic-drain
-python3.12 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -e ".[dev]"
 bash scripts/verify-env.sh
 ```
+
+If `python3` is still below 3.11 after installing a versioned package, create the venv with
+that binary instead (e.g. `python3.12 -m venv .venv`).
 
 H2 JARs ship under `vendor/` — do not fetch them during a drain run.
 

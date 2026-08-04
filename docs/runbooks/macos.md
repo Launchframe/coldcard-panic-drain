@@ -8,18 +8,23 @@ Primary development target (Apple Silicon and Intel).
 brew install python@3.12 openjdk@17
 ```
 
-Ensure `java` is on `PATH` (Homebrew prints caveats for OpenJDK). Confirm:
+Homebrew’s `python@3.12` formula is a common way to get a supported interpreter; any
+Python ≥ 3.11 works. Ensure `java` is on `PATH` (Homebrew prints caveats for OpenJDK).
+Confirm:
 
 ```bash
-python3.12 --version   # ≥ 3.11
-java -version          # 11+ (17 LTS recommended)
+python3 --version   # must be ≥ 3.11
+java -version       # 11+ (17 LTS recommended)
 ```
+
+If `python3` is still the macOS stub or older than 3.11, use the Homebrew binary
+(`python3.12` or the path `brew --prefix python@3.12` prints) for the checks and venv below.
 
 ## Project setup
 
 ```bash
 cd coldcard-panic-drain
-python3.12 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -e ".[dev]"
