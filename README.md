@@ -189,6 +189,7 @@ Same commands with `--source` = staging wallet and `--dest` = final wallet.
 | Doc | Purpose |
 |-----|---------|
 | [docs/runbooks/](docs/runbooks/) | Platform install (macOS / Linux / Windows) |
+| [docs/issues/](docs/issues/README.md) | Wallet-support enhancement specs (Electrum, script types, multisig, Nunchuk — issues #12–#15) |
 | [DISCLAIMER.md](DISCLAIMER.md) | Beta software disclaimer |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
@@ -210,7 +211,7 @@ Common questions (fees, signing errors, broadcast setup): **[FAQS.md](FAQS.md)**
 
 ## Roadmap
 
-Wallet-format expansion is tracked in [docs/issues/](docs/issues/README.md) (Electrum, additional script types, multisig, Nunchuk). File GitHub issues with `./scripts/file-wallet-support-issues.sh`.
+Wallet-format expansion specs live in [docs/issues/](docs/issues/README.md) (Electrum, script types, multisig, Nunchuk — GitHub issues #12–#15). File or refresh issues with `./scripts/file-wallet-support-issues.sh`.
 
 ## License
 
