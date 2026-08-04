@@ -17,6 +17,8 @@ Instructions for AI agents planning and executing work in this repository.
 
 Sparrow alone handles sync and broadcast. This tool is a local file processor.
 
+For a short agent onboarding pointer, see [docs/AGENT-QUICKSTART.md](docs/AGENT-QUICKSTART.md).
+
 Repository: `github.com/Launchframe/coldcard-panic-drain`
 
 ---
