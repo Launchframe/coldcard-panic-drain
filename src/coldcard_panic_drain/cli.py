@@ -64,6 +64,11 @@ app = typer.Typer(
     add_completion=False,
 )
 
+BETA_BANNER = (
+    "BETA: This tool handles real funds. Run `plan` first, read DISCLAIMER.md, "
+    "and verify every destination on your Coldcard."
+)
+
 FEE_BASE_HELP = (
     "Target fee rate in sat/vB for each single-UTXO PSBT. Chosen at plan time and "
     "baked into the transaction — you cannot raise it after signing. Use a "
@@ -181,6 +186,7 @@ def plan(
     ),
 ) -> None:
     """Read wallets, label UTXOs, preview mapping — no PSBT writes."""
+    typer.echo(BETA_BANNER, err=True)
     try:
         quiet_hours = parse_quiet_hours(dnd_start, dnd_end, timezone)
         amount_unit = normalize_display_unit(display)
@@ -271,6 +277,7 @@ def generate(
     ),
 ) -> None:
     """Write PSBTs, BIP-329 labels, schedule, and checklists."""
+    typer.echo(BETA_BANNER, err=True)
     output.mkdir(parents=True, exist_ok=True)
     sp = session_path(output)
     if not sp.is_file():

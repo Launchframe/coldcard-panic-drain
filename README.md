@@ -1,5 +1,10 @@
 # coldcard-panic-drain
 
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+
+> **Beta** — review [DISCLAIMER.md](DISCLAIMER.md); dry-run with `plan` before `generate`.
+
 Offline CLI for migrating funds from a compromised Sparrow wallet (Wallet A) to a fresh wallet (Wallet B) without consolidating UTXOs or broadcasting in one shot.
 
 **Local network contract:** wallet processing (`plan`, `generate`, etc.) is file-only. The only network use is optional `broadcast-due`, which talks to **Bitcoin Core on localhost or a `*.local` host** (e.g. `https://happy-feet.local:8332`). Public/remote nodes require manual broadcast in Sparrow.
@@ -179,6 +184,19 @@ See [FAQS.md](FAQS.md#reschedule-vs-re-plan) for when to use `reschedule` vs. re
 
 Same commands with `--source` = staging wallet and `--dest` = final wallet.
 
+## Docs
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/runbooks/](docs/runbooks/) | Platform install (macOS / Linux / Windows) |
+| [DISCLAIMER.md](DISCLAIMER.md) | Beta software disclaimer |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+| [FAQS.md](FAQS.md) | Common questions (fees, signing, broadcast) |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
+
+Verify a fresh checkout with `bash scripts/verify-env.sh`.
+
 ## FAQ
 
 Common questions (fees, signing errors, broadcast setup): **[FAQS.md](FAQS.md)**
@@ -188,6 +206,7 @@ Common questions (fees, signing errors, broadcast setup): **[FAQS.md](FAQS.md)**
 - Sparrow `.mv.db` files contain xpubs and full transaction history — treat output dirs as sensitive.
 - The tool never sees seeds; only watch-only wallet databases.
 - RAM workspace is wiped on exit (`wipe` subcommand available).
+- Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
 
 ## Roadmap
 
@@ -195,4 +214,4 @@ Wallet-format expansion is tracked in [docs/issues/](docs/issues/README.md) (Ele
 
 ## License
 
-MIT
+[MIT](LICENSE) — Copyright Launchframe 2026.

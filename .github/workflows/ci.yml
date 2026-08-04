@@ -22,8 +22,8 @@ jobs:
       - name: Install Java (H2 / Sparrow wallet reads)
         run: sudo apt-get update && sudo apt-get install -y default-jre-headless
 
-      - name: Install package and dev dependencies
-        run: pip install -e ".[dev]"
+      - name: Verify environment
+        run: bash scripts/verify-env.sh --skip-tests
 
       - name: Run tests
         run: pytest -q
