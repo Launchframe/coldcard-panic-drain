@@ -86,13 +86,13 @@ Use mocked `_query_rows` / `make_test_wallet()` fixtures for H2 reader work. If 
 
 ## Localhost-only contract (application)
 
-The application may open sockets **only** to `127.0.0.1` and `::1` (optional `broadcast-due` → local Bitcoin Core). Agents must not:
+The application may open sockets **only** for optional `broadcast-due` → Bitcoin Core on loopback, `*.local`, or (with `--allow-onion-rpc` and `--i-understand-onion-privacy-risk`) a Tor `.onion` RPC URL. Agents must not:
 
-- Add remote RPC hosts, `--allow-remote`, or public API clients
-- Call Esplora, Electrum, mempool APIs, or remote Bitcoin Core RPC
+- Add broad remote RPC hosts, `--allow-remote`, or public API clients without the explicit Tor opt-in pair above
+- Call Esplora, Electrum, mempool APIs, or other remote Bitcoin Core RPC endpoints
 - Add dependencies that phone home by default
 
-Manual broadcast to remote nodes is via Sparrow only.
+Manual broadcast to other remote nodes is via Sparrow only.
 
 ---
 

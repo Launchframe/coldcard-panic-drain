@@ -153,3 +153,39 @@ def test_restore_after_disable():
     disable_localhost_guard()
     s = socket.socket()
     s.close()
+
+
+def test_onion_host_blocked_by_default():
+    onion = f"{'b' * 56}.onion"
+    assert not _is_allowed_host(onion)
+
+
+def test_onion_host_allowed_when_opt_in_enabled():
+    from coldcard_panic_drain.network_guard import (
+        disable_onion_connections,
+        enable_onion_connections,
+    )
+
+    onion = f"{'b' * 56}.onion"
+    enable_onion_connections()
+    try:
+        assert _is_allowed_host(onion)
+    finally:
+        disable_onion_connections()
+    assert not _is_allowed_host(onion)
+
+
+def test_non_onion_blocked_uses_localhost_msg_when_onion_opt_in_enabled():
+    from coldcard_panic_drain.network_guard import (
+        _check_host,
+        disable_onion_connections,
+        enable_onion_connections,
+        NetworkBlockedError,
+    )
+
+    enable_onion_connections()
+    try:
+        with pytest.raises(NetworkBlockedError, match="localhost or local"):
+            _check_host("8.8.8.8")
+    finally:
+        disable_onion_connections()

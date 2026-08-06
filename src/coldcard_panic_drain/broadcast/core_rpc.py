@@ -1,4 +1,4 @@
-"""Bitcoin Core JSON-RPC client (localhost and *.local only)."""
+"""Bitcoin Core JSON-RPC client (localhost, *.local, optional .onion)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
-from coldcard_panic_drain.broadcast.rpc_url import assert_loopback_rpc_url
-from coldcard_panic_drain.network_guard import NetworkBlockedError
+from coldcard_panic_drain.broadcast.rpc_url import assert_rpc_url
+from coldcard_panic_drain.network_guard import (
+    NetworkBlockedError,
+    disable_onion_connections,
+    enable_onion_connections,
+)
 
 
 class CoreRpcError(RuntimeError):
@@ -25,9 +29,13 @@ class CoreRpcClient:
         cookie_file: Optional[Path] = None,
         user: Optional[str] = None,
         password: Optional[str] = None,
+        allow_onion: bool = False,
     ) -> None:
-        self.url = assert_loopback_rpc_url(url)
+        self.url = assert_rpc_url(url, allow_onion=allow_onion)
+        self._allow_onion = allow_onion
         self._auth_header = self._build_auth(cookie_file, user, password)
+        if allow_onion:
+            enable_onion_connections()
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     @staticmethod
@@ -62,8 +70,8 @@ class CoreRpcClient:
                 body = json.loads(resp.read().decode())
         except NetworkBlockedError as e:
             raise CoreRpcError(
-                "RPC blocked by localhost network guard (unexpected for loopback/*.local). "
-                "Disable proxy env vars or report a bug."
+                "RPC blocked by network guard. "
+                "Use a localhost / *.local --rpc-url, or pass --allow-onion-rpc for a .onion host."
             ) from e
         except urllib.error.HTTPError as e:
             raise CoreRpcError(f"RPC HTTP {e.code}: {e.read().decode()}") from e
@@ -72,6 +80,10 @@ class CoreRpcClient:
         if body.get("error"):
             raise CoreRpcError(str(body["error"]))
         return body.get("result")
+
+    def close(self) -> None:
+        if self._allow_onion:
+            disable_onion_connections()
 
     def send_raw_transaction(self, hex_tx: str) -> str:
         return self.call("sendrawtransaction", [hex_tx])

@@ -2,12 +2,15 @@
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import yaml
 from typer.main import get_command
 from typer.testing import CliRunner
 
 from coldcard_panic_drain.cli import app
+
+ONION_URL = f"http://{'c' * 56}.onion:8332"
 
 
 def test_typer_registers_plan_without_annotation_name_error():
@@ -61,3 +64,75 @@ def test_reschedule_missing_schedule_file_errors(tmp_path: Path):
     runner = CliRunner()
     result = runner.invoke(app, ["reschedule", "-o", str(tmp_path), "--spread-hours", "2"])
     assert result.exit_code == 1
+
+
+def test_broadcast_due_onion_requires_opt_in_flags(tmp_path: Path):
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "broadcast-due",
+            "-o",
+            str(tmp_path),
+            "--rpc-url",
+            ONION_URL,
+            "--rpc-user",
+            "u",
+            "--rpc-password",
+            "p",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "allow-onion-rpc" in (result.stdout + result.stderr)
+
+
+def test_broadcast_due_onion_flags_without_onion_url_rejected(tmp_path: Path):
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "broadcast-due",
+            "-o",
+            str(tmp_path),
+            "--allow-onion-rpc",
+            "--i-understand-onion-privacy-risk",
+            "--rpc-user",
+            "u",
+            "--rpc-password",
+            "p",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "apply only" in (result.stdout + result.stderr)
+
+
+def test_broadcast_due_onion_ok_with_flags(tmp_path: Path, monkeypatch):
+    mock_rpc = MagicMock()
+    monkeypatch.setattr(
+        "coldcard_panic_drain.cli.CoreRpcClient",
+        lambda *args, **kwargs: mock_rpc,
+    )
+    monkeypatch.setattr(
+        "coldcard_panic_drain.cli.run_broadcast_due",
+        lambda *args, **kwargs: [],
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "broadcast-due",
+            "-o",
+            str(tmp_path),
+            "--rpc-url",
+            ONION_URL,
+            "--allow-onion-rpc",
+            "--i-understand-onion-privacy-risk",
+            "--rpc-user",
+            "u",
+            "--rpc-password",
+            "p",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert "privacy tradeoffs" in (result.stdout + result.stderr)
+    mock_rpc.close.assert_called_once()
