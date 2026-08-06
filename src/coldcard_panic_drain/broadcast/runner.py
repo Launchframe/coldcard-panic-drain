@@ -202,8 +202,7 @@ def run_broadcast_due(
         )
         persisted_ready = state.get_ready_at(order)
         if persisted_ready != ready_at and (
-            broadcast_jitter_minutes > 0
-            or (persisted_ready is not None and ready_at > persisted_ready)
+            broadcast_jitter_minutes > 0 or ready_at > not_before
         ):
             state.set_ready_at(order, ready_at)
             state.save_atomic(state_path(output_dir))

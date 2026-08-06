@@ -258,6 +258,53 @@ def test_backlog_catch_up_honors_schedule_gap_after_prior_broadcast(
     assert ready_at == now + timedelta(hours=1)
 
 
+def test_backlog_catch_up_persists_floor_when_jitter_disabled(
+    tmp_path: Path, monkeypatch
+):
+    now = datetime(2026, 8, 4, 2, 42, 32, tzinfo=timezone.utc)
+    order6_not_before = datetime(2026, 8, 4, 1, 30, 0, tzinfo=timezone.utc)
+    order7_not_before = datetime(2026, 8, 4, 2, 30, 0, tzinfo=timezone.utc)
+    doc = {
+        "entries": [
+            {
+                "order": 6,
+                "label": "coin-6",
+                "signed": "psbts_signed/coin-6-signed.psbt",
+                "broadcast_not_before": order6_not_before.isoformat(),
+            },
+            {
+                "order": 7,
+                "label": "coin-7",
+                "signed": "psbts_signed/coin-7-signed.psbt",
+                "broadcast_not_before": order7_not_before.isoformat(),
+            },
+        ]
+    }
+    (tmp_path / "schedule.yaml").write_text(yaml.safe_dump(doc), encoding="utf-8")
+    _seed_signed_file(tmp_path, "coin-7-signed.psbt")
+    _patch_signed_tx_hex(monkeypatch)
+
+    state = BroadcastState()
+    state.mark_broadcast(6, "bb" * 32)
+    state.entries[6]["broadcast_at"] = now.isoformat()
+    state.save_atomic(state_path(tmp_path))
+
+    rpc = MagicMock()
+    with patch(
+        "coldcard_panic_drain.broadcast.runner.datetime"
+    ) as mock_dt:
+        mock_dt.now.return_value = now
+        mock_dt.fromisoformat = datetime.fromisoformat
+        results = run_broadcast_due(
+            tmp_path, rpc, max_count=1, broadcast_jitter_minutes=0
+        )
+
+    result = next(r for r in results if r.order == 7)
+    assert result.action == "skipped"
+    ready_at = BroadcastState.load(state_path(tmp_path)).get_ready_at(7)
+    assert ready_at == now + timedelta(hours=1)
+
+
 def test_backlog_catch_up_bumps_stale_persisted_ready_at(
     tmp_path: Path, monkeypatch
 ):
