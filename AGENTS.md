@@ -96,6 +96,44 @@ Manual broadcast to remote nodes is via Sparrow only.
 
 ---
 
+## Real Steel review focus
+
+Adversarial review passes (Composer → Sonnet → post-mortem) should prioritize **fund safety and privacy** over feature velocity. Use `pytest -q` as the merge gate unless `PRE_COMMIT_GATE.md` exists.
+
+### Always scrutinize
+
+| Area | What to verify |
+|------|----------------|
+| **Privacy** | No wallet fields in logs, default CLI output, PR bodies, or agent-router traffic (see prohibited list above). |
+| **Destination integrity** | Wallet B receive addresses match dest xpub at plan time; `validate_dest_address` / `compare_assignment_mapping` on `generate`; dest (and source) wallet-swap snapshots in session. |
+| **Source integrity** | UTXOs derive from Wallet A xpub; session UTXOs match fresh Sparrow read; PSBT inputs carry correct `bip32_derivations` (full paths, including Sparrow-relative `m/0/i`). |
+| **Network boundary** | `plan` / `generate` / `verify-manifest` stay socket-free; `broadcast-due` only to loopback / `*.local` with DNS-resolved IP allow-list (no hostname-suffix bypass). |
+| **Incomplete drain** | Skipped/frozen UTXOs stay loud: banner, `SKIPPED-UTXOS.txt`, `I UNDERSTAND` gate. |
+| **Signed PSBT handling** | `psbts_signed/` path containment; dry-run skips signed-dir readiness check; `--follow` is single-shot per wake (`--max-count` ignored — warn on stderr). |
+| **Wallet path guard** | Agents never query real `.mv.db` via shell; tests use `tests/fixtures/` or mocks only. |
+
+### Broadcast cadence (PR #9 scope)
+
+- Schedule jitter at plan vs runtime broadcast jitter (`broadcast-state.yaml` `ready_at`)
+- `reschedule` retimes unbroadcast entries without re-signing
+- `--follow` sleep chunks + SIGINT ack; heartbeats on stderr
+- Quiet hours default off; `--respect-quiet-hours` opt-in
+
+### Common regression classes
+
+- embit `Descriptor.derive` misuse (chain/index collapse)
+- Re-rolling assignments in `generate` after `plan`
+- Fee jitter / floor math diverging across `fees.py`, FAQS, and CLI help
+- Legacy prompts (`confirm_mapping_review`) drifting from `run_mapping_review` behavior
+
+### Review output
+
+- File findings by severity (Critical / Suggestion / Nit)
+- No sample txids, addresses, or amounts in GitHub comments
+- Open risks explicitly listed even when not fixed in-pass
+
+---
+
 ## Conversational planning
 
 When the user asks for features, fixes, or workflow help:

@@ -511,7 +511,7 @@ def broadcast_due(
     max_count: int = typer.Option(
         1,
         "--max-count",
-        help="Broadcast at most this many due entries per invocation (or per --follow wake).",
+        help="Broadcast at most this many due entries per invocation (--ignored with --follow).",
     ),
     dry_run: bool = typer.Option(False, "--dry-run"),
     skip_failed: bool = typer.Option(False, "--skip-failed"),
@@ -538,6 +538,11 @@ def broadcast_due(
         raise typer.Exit(1) from e
 
     if follow:
+        if max_count != 1:
+            typer.echo(
+                "Note: --follow broadcasts one entry per wake; --max-count is ignored.",
+                err=True,
+            )
         typer.echo(
             "Running in --follow mode. Sleeping between checks; press Ctrl-C to stop."
         )
@@ -552,7 +557,7 @@ def broadcast_due(
             run_broadcast_follow(
                 output,
                 rpc,
-                max_count=max_count,
+                max_count=1,
                 dry_run=dry_run,
                 skip_failed=skip_failed,
                 broadcast_jitter_minutes=broadcast_jitter_minutes,

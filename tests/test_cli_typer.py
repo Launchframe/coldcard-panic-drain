@@ -61,3 +61,59 @@ def test_reschedule_missing_schedule_file_errors(tmp_path: Path):
     runner = CliRunner()
     result = runner.invoke(app, ["reschedule", "-o", str(tmp_path), "--spread-hours", "2"])
     assert result.exit_code == 1
+
+
+def test_broadcast_due_follow_warns_when_max_count_not_one(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "coldcard_panic_drain.cli.run_broadcast_follow",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "coldcard_panic_drain.cli.CoreRpcClient",
+        lambda *args, **kwargs: object(),
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["broadcast-due", "-o", str(tmp_path), "--follow", "--max-count", "3"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "--max-count is ignored" in result.stderr
+
+
+def test_broadcast_due_follow_default_max_count_no_warning(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "coldcard_panic_drain.cli.run_broadcast_follow",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "coldcard_panic_drain.cli.CoreRpcClient",
+        lambda *args, **kwargs: object(),
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["broadcast-due", "-o", str(tmp_path), "--follow"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "--max-count is ignored" not in result.stderr
+
+
+def test_broadcast_due_follow_passes_max_count_one_to_runner(tmp_path: Path, monkeypatch):
+    captured: dict = {}
+
+    def fake_follow(*args, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("coldcard_panic_drain.cli.run_broadcast_follow", fake_follow)
+    monkeypatch.setattr(
+        "coldcard_panic_drain.cli.CoreRpcClient",
+        lambda *args, **kwargs: object(),
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["broadcast-due", "-o", str(tmp_path), "--follow", "--max-count", "3"],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured.get("max_count") == 1
